@@ -1,0 +1,95 @@
+# Limitações e riscos operacionais
+
+Este documento resume o que o script **não** faz, e os riscos que devem ser
+considerados antes de qualquer execução real. Não substitui a análise do
+operador.
+
+## O que depende da CLI real da OLT
+
+- Os comandos usados são exatamente os observados na MA5800 V100R021
+  (`display ont`, `display ont wan-info`, `display ont ipconfig`,
+  `ont delete/add`, `ont ipconfig`, `ont port native-vlan`,
+  `ont tr069-server-config`, `ont internet-config`, `ont wan-config`,
+  `service-port`, `undo service-port`, `display`).
+- Outras versões ou modelos podem não suportar algum comando usado, ou
+  interpretar a resposta de forma diferente. A camada SSH registra as
+  respostas; comandos que falham são tratados como falha, nunca ignorados.
+- A listagem de ONTs (`display ont`) é interpretada por heurística: linhas que
+  apresentam `ONT ID` iniciam um equipamento. Se a CLI não expuser esses campos,
+  a OLT não é localizada e nenhuma alteração é executada nela.
+- Os campos ausentes na resposta (por exemplo, `Serial` no `display ont`) são
+  apenas ignorados; a identidade de uma ONT é confirmada somente pelos dados
+  realmente retornados.
+
+## Prevenção de alteração errada
+
+- Somente ONTs identificados com segurança são submetidos à execução.
+- `undo service-port` e `ont delete` só ocorrem depois de o service-port
+  original ser identificado; se ele não puder ser identificado, a ONT é
+  marcada como `INCONCLUSIVO` e nenhuma alteração é enviada.
+- Nenhum identificador calculado, próximo número disponível ou sugestão de
+  `gemport` é enviado: a OLT atribui o service-port criado.
+- Credenciais vindas da planilha nunca são deduzidas por tentativa; ausência de
+  senha, MAC ou serial inválido bloqueia o registro antes de qualquer conexão.
+- Ausência de um identificador não é tratada como divergência; divergência
+  (serial e usuário apontando para registros diferentes) bloqueia a operação.
+- Uma execução real exige confirmação por card: o operador confirma o card inteiro
+  antes de qualquer comando ser enviado (o DRY-RUN nunca pede confirmação).
+
+## Sobrecarga e interrupção
+
+- Apenas uma ONT é processada por vez; nenhuma alteração é enviada em
+  paralelo.
+- Limites configuráveis: máximo de ONTs (`--limit`), intervalo mínimo entre
+  operações (`--delay`), pausas periódicas (`--pausa`) e tempo máximo
+  (`--tempo-maximo`).
+- Três falhas consecutivas suspenden a execução automaticamente.
+- A interrupção manual (Ctrl+C) é segura: nenhum comando é reenviado após a
+  interrupção, e o estado é recapturado no próximo início.
+- A perda de conexão SSH não é interpretada como falha do comando anterior;
+  apenas comandos confirmados enquanto a sessão estava ativa são considerados
+  executados.
+- Consultas de leitura são limitadas em número por ONT e espaçadas; comandos de
+  configuração são enviados um a um, aguardando a resposta da CLI.
+
+## Estado, registro e repetição
+
+- O estado original de cada ONT é capturado antes da primeira alteração e os
+  comandos executados são registrados em `registro_operacoes.json`.
+- Uma ONT concluída em execução anterior não é reprovisionada novamente.
+- Falhas intercaladas registram a etapa em que pararam; nenhum rollback é
+  executado automaticamente, pois não há procedimento validado para isso.
+  O operador deve restaurar manualmente quando necessário.
+
+## Segurança de credenciais
+
+- Senhas PPPoE e senhas SSH nunca são gravadas em logs, relatórios ou mensagens
+  de erro. No relatório, comandos com senha aparecem mascarados.
+- Valores contendo `"` ou `\` são bloqueados na montagem do comando, pois a CLI
+  Huawei não garante transmissão segura deles.
+- A conexão SSH valida a chave do servidor (`RejectPolicy`); chaves novas não
+  são aceitas automaticamente.
+
+## Limitações conhecidas
+
+- `display service-port` é consultado apenas em modo de leitura, para
+  descobrir o gemport e o user-vlan do service-port atual. Se a CLI não
+  expuser esses campos, a ONT fica `INCONCLUSIVO` e nenhuma alteração é
+  enviada.
+- Os perfis WAN/TR-069 e demais parâmetros são lidos do estado atual da
+  ONT (`display ont wan-info` / `display ont ipconfig`). Se qualquer valor não
+  puder ser identificado, a ONT fica `INCONCLUSIVO` e nenhuma alteração é
+  enviada — nada é assumido.
+- Somente o line-profile é configurável. Todos os demais valores reproduzidos
+  (VLAN, prioridade, gemport, user-vlan, perfis WAN/TR-069) são exatamente os
+  que já estavam na OLT, descobertos a cada execução; não há parâmetro deles
+  no arquivo de configuração.
+- A validação final considera o estado imediatamente após os comandos; se a
+  PPPoE demorar para conectar, a ONT é marcada `PARCIAL` e nenhuma nova
+  configuração é enviada automaticamente.
+- Execuções reais exigem um operador presente para as confirmações. A
+  confirmação pedida é por card: o operador confirma o card inteiro antes de
+  qualquer comando ser enviado para os ONTs desse card. O DRY-RUN nunca pede
+  confirmação.
+- Os testes automatizados usam um transporte SSH simulado; nenhum teste com
+  OLT real foi executado.
