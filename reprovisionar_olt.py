@@ -481,9 +481,11 @@ class SessaoSSH:
     def _desativar_paginacao(self):
         """Desliga a paginação da CLI (evita o prompt `--More--`).
 
-        `screen-length 0 temporary` é o padrão da VRP: a saída inteira vem
-        numa tela, sem esperar tecla. A forma temporária vale só para a
-        sessão e não altera a configuração do equipamento.
+        A MA5800 não possui `screen-length`; o equivalente é `scroll` sem
+        argumento, conforme indicado pela própria Huawei no fórum do
+        netmiko ("This is the equivalent to screen-length 0 temporary").
+        `scroll 512` amplia a tela e serve como alternativa. Nenhuma das
+        variantes altera a configuração do equipamento.
         """
         configurado = (self.configuracao.get("screen_length") or
                        "auto").strip().lower()
@@ -492,19 +494,24 @@ class SessaoSSH:
         candidatos = []
         if configurado not in ("auto", ""):
             candidatos.append(configurado)
-        for variante in ("screen-length 0 temporary", "screen-length disable"):
+        for variante in ("scroll", "scroll 512", "screen-length 0 temporary",
+                         "screen-length disable"):
             if variante not in candidatos:
                 candidatos.append(variante)
         for comando in candidatos:
-            self.comandos.append(comando)
-            self._enviar(comando + self.terminador)
-            saida = self._ler_ate(self._prompt_no_buffer, 10)
+            saida = self._tentar_comando(comando)
             if not _comando_desconhecido(saida):
                 logger.info("paginacao da CLI desativada (%s)", comando)
                 return
         logger.warning(
-            "a CLI nao aceitou screen-length; listagens longas podem expirar "
-            "(defina screen_length em config.ini)")
+            "a CLI nao aceitou nenhum comando de desativacao da paginacao "
+            "(%s); listagens longas podem expirar", ", ".join(candidatos))
+
+    def _tentar_comando(self, comando, timeout=10):
+        """Envia um comando e devolve a resposta crua da CLI."""
+        self.comandos.append(comando)
+        self._enviar(comando + self.terminador)
+        return self._ler_ate(self._prompt_no_buffer, timeout)
 
     def executar(self, comando):
         if not self.conectada:
