@@ -211,6 +211,16 @@ RESPOSTA_RESUMO_ONTS = """  In port 0/1/4, the total of ONTs are: 2, online: 1
 """
 
 
+RESPOSTA_CONFIG_ATUAL_COM_PERFIL_NOVO = (
+    ' ont-srvprofile gpon profile-id 100 profile-name "SRV-PADRAO"\n'
+    ' ont add 4 42 sn-auth "HWTC0D3BDDA7" omci ont-lineprofile-id 11'
+    ' ont-srvprofile-id 100 desc "joao"\n'
+    ' ont tr069-server-config 4 42 profile-id 1\n'
+    ' ont internet-config 4 42 ip-index 0\n'
+    ' ont wan-config 4 42 ip-index 0 profile-id 10\n'
+)
+
+
 RESPOSTA_RESUMO_DOIS_ONTS = """  In port 0/1/4, the total of ONTs are: 2, online: 2
   ------------------------------------------------------------------------------
   ONT  Run     Last                Last                Last
@@ -750,6 +760,122 @@ class TestesFluxo(unittest.TestCase):
         self.assertEqual([c for c in alteracoes if " 43" in c], [])
         # A ONT 42, compatível, foi reprovisionada por completo.
         self.assertTrue([c for c in alteracoes if " 42" in c])
+
+    def test_ont_com_o_perfil_desejado_nao_e_reprovisionada(self):
+        # A ONT 42 já está com o line-profile configurado (11): o script
+        # não deve reprovisioná-la, para não gerar retrabalho na CPE.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            RESPOSTA_CONFIG_ATUAL_COM_PERFIL_NOVO)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=False,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resultados = orquestrador.executar(
+            [registro], indice_por_serial, indice_por_usuario)
+        info = resultados["0/1/4/42"]
+        self.assertEqual(info["classe"], script.JA_CONFIGURADA)
+        self.assertIn("line-profile 11", info["motivo"])
+        # Nenhum comando de alteração foi preparado.
+        self.assertNotIn("passos", info)
+
+    def test_reprovisionar_ja_configuradas_quando_pedido(self):
+        # A opção de configuração permite reprovisionar mesmo assim.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            RESPOSTA_CONFIG_ATUAL_COM_PERFIL_NOVO)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "reprovisionar_ja_configuradas": "sim",
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=False,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resultados = orquestrador.executar(
+            [registro], indice_por_serial, indice_por_usuario)
+        info = resultados["0/1/4/42"]
+        self.assertEqual(info["classe"], script.PADRAO_1_COMPLETA)
+        self.assertIn("passos", info)
 
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o

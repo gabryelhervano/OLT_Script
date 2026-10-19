@@ -15,7 +15,7 @@ from .configuracao import portas_configuradas
 from .descoberta import (_consultar_configuracao_atual, _consultar_servicos,
                          capturar_estado, listar_onts, validar_estado_final)
 from .erros import ErroOperacao
-from .estados import (ESTADO_INCONCLUSIVO, ESTADO_SUCESSO,
+from .estados import (ESTADO_INCONCLUSIVO, ESTADO_SUCESSO, JA_CONFIGURADA,
                       PADRAO_1_COMPLETA, PADRAO_2_PPPOE, PADRAO_2_SERIAL)
 from .planilha import _CHAVE_SENHA, _CHAVE_USUARIO
 from .relatorio import (ARQUIVO_REGISTRO, carregar_registro, chave_ont,
@@ -157,12 +157,20 @@ class Orquestrador:
                 dados["senha"] = resultado["registro"][_CHAVE_SENHA]
             if resultado["classe"] in (PADRAO_1_COMPLETA, PADRAO_2_SERIAL,
                                       PADRAO_2_PPPOE):
-                try:
-                    resultado["passos"] = self._montar_passos(dados)
-                except ErroOperacao as erro:
-                    resultado["classe"] = ESTADO_INCONCLUSIVO
-                    resultado["motivo"] = "falha na execução: %s" % erro
-                executaveis.append(dados)
+                if self._ja_tem_o_perfil_desejado(estado_atual):
+                    # A ONT já está com o line-profile pedido: reprovisionar
+                    # de novo só geraria retrabalho e indisponibilidade.
+                    resultado["classe"] = JA_CONFIGURADA
+                    resultado["motivo"] = (
+                        "line-profile %s já aplicado"
+                        % self.configuracao["lineprofile"])
+                else:
+                    try:
+                        resultado["passos"] = self._montar_passos(dados)
+                    except ErroOperacao as erro:
+                        resultado["classe"] = ESTADO_INCONCLUSIVO
+                        resultado["motivo"] = "falha na execução: %s" % erro
+                    executaveis.append(dados)
             self.resultados[identificador] = resultado
         if not executaveis:
             return True
@@ -260,6 +268,20 @@ class Orquestrador:
                 "motivo": "falha na execução: %s" % erro,
             }
 
+    def _ja_tem_o_perfil_desejado(self, estado_atual):
+        """Indica se a ONT já usa o line-profile configurado.
+
+        Reprovisionar de novo uma ONT já configurada só geraria retrabalho
+        (e um breve período sem serviço) na CPE do cliente.
+        """
+        if self.configuracao.get("reprovisionar_ja_configuradas") in (
+                "1", "sim", "yes", "true"):
+            return False
+        atual = estado_atual.get("lineprofile_atual")
+        if not atual:
+            return False
+        return str(atual) == str(self.configuracao["lineprofile"])
+
     def _classe(self, identificador):
         """Classe atribuída à ONT na fase de classificação."""
         return self.resultados.get(identificador, {}).get("classe")
@@ -356,7 +378,8 @@ class Orquestrador:
         return None
 
     def _ja_estava_configurado(self, configuracao, estado_atual):
-        return False
+        """A ONT já está com o perfil pedido: não há o que reconfigurar."""
+        return self._ja_tem_o_perfil_desejado(estado_atual)
 
     def _dados(self, atual):
         fsp = atual.get("F/S/P") or ""

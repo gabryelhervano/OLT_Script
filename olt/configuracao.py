@@ -26,6 +26,7 @@ _PADROES_CONFIG = {
     "altura": ("OLT_ALTURA", "1000"),
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
+    "reprovisionar_ja_configuradas": ("OLT_REPROVISIONAR_JA_CONFIGURADAS", ""),
     "portas": ("OLT_PORTAS", "0-15"),
 }
 

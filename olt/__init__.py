@@ -22,8 +22,8 @@ from .descoberta import capturar_estado, listar_onts, validar_estado_final
 from .erros import ErroOperacao
 from .estados import (BLOQUEADA_AMBIGUIDADE, BLOQUEADA_DIVERGENCIA,
                       ESTADO_INCONCLUSIVO, ESTADO_PARCIAL, ESTADO_SUCESSO,
-                      IGNORADA_SEM_IDENTIFICADORES, PADRAO_1_COMPLETA,
-                      PADRAO_2_PPPOE, PADRAO_2_SERIAL)
+                      IGNORADA_SEM_IDENTIFICADORES, JA_CONFIGURADA,
+                      PADRAO_1_COMPLETA, PADRAO_2_PPPOE, PADRAO_2_SERIAL)
 from .orquestrador import ControleExecucao, Orquestrador
 from .planilha import indexar, ler_planilha, resumo_planilha
 from .relatorio import carregar_registro, chave_ont, gravar_relatorio, \
@@ -40,6 +40,7 @@ __all__ = [
     "ESTADO_SUCESSO",
     "ErroOperacao",
     "IGNORADA_SEM_IDENTIFICADORES",
+    "JA_CONFIGURADA",
     "Orquestrador",
     "PADRAO_1_COMPLETA",
     "PADRAO_2_PPPOE",

@@ -94,6 +94,10 @@ operador.
   encontrada na configuração corrente, a sequência validada completa é usada
   e os perfis precisam ser descobertos — caso contrário a ONT fica
   `INCONCLUSIVO`.
+- ONTs que já estão com o line-profile configurado são puladas e classificadas
+  como `JA_CONFIGURADA`: reprovisioná-las de novo só geraria retrabalho e um
+  breve período sem serviço na CPE. A opção `reprovisionar_ja_configuradas`
+  força o reprovisionamento.
 - A validação final considera o estado imediatamente após os comandos; se a
   PPPoE demorar para conectar, a ONT é marcada `PARCIAL` e nenhuma nova
   configuração é enviada automaticamente.
