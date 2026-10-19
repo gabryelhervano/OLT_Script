@@ -530,20 +530,41 @@ class SessaoSSH:
         self._tentar_comando("quit", timeout=8)
         return False
 
-    def _tentar_comando(self, comando, timeout=10):
+    def _tentar_comando(self, comando, timeout=20):
         """Envia um comando e devolve a resposta crua da CLI.
 
         Algumas CLIs não reimprimem o prompt depois de determinados
         comandos (o `scroll` desliga a exibição do "Command:"). Nesse
         caso a espera expira, mas a sessão continua viva: o que já chegou
-        é devolvido para que o comando seja avaliado pelo texto de erro.
+        é devolvido e a CLI é aguardada ficar ociosa antes do próximo
+        comando (sem isso o texto se junta ao comando anterior).
         """
         self.comandos.append(comando)
         self._enviar(comando + self.terminador)
         try:
             return self._ler_ate(self._prompt_no_buffer, timeout)
         except ErroOperacao:
-            return self._saida_parcial
+            parcial = self._saida_parcial
+            self._aguardar_ociosa()
+            return parcial
+
+    def _aguardar_ociosa(self, espera_max=15, silencio=1.0):
+        """Aguarda a CLI terminar o processamento, sem enviar nada."""
+        fim = time.monotonic() + espera_max
+        ultima = time.monotonic()
+        partes = []
+        while time.monotonic() < fim:
+            disponivel, _, _ = select.select([self.sessao], [], [], 0.2)
+            if not disponivel:
+                if time.monotonic() - ultima >= silencio:
+                    break
+                continue
+            dados = self.sessao.recv(4096)
+            if not dados:
+                break
+            partes.append(dados.decode("utf-8", "replace"))
+            ultima = time.monotonic()
+        return "".join(partes)
 
     def executar(self, comando):
         if not self.conectada:
@@ -551,6 +572,9 @@ class SessaoSSH:
         comando = comando.strip()
         if not comando:
             return ""
+        # Garante que a CLI terminou o comando anterior antes de enviar o
+        # próximo (sem isso o texto se junta ao comando em andamento).
+        self._aguardar_ociosa(espera_max=3, silencio=0.3)
         self.comandos.append(comando)
         self._enviar(comando + self.terminador)
         return self._ler_ate(self._prompt_no_buffer, self.timeout)
@@ -1939,7 +1963,7 @@ def _executar_teste_cli(sessao, configuracao):
     Serve para conferir se a sessão está sincronizada e se os comandos
     realmente chegam ao equipamento.
     """
-    for comando in ("display version", "display clock"):
+    for comando in ("display version", "display ont info summary 0/1/0"):
         try:
             saida = sessao.executar(comando)
         except ErroOperacao as erro:
