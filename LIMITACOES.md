@@ -35,6 +35,9 @@ operador.
   (serial e usuário apontando para registros diferentes) bloqueia a operação.
 - Uma execução real exige confirmação por card: o operador confirma o card inteiro
   antes de qualquer comando ser enviado (o DRY-RUN nunca pede confirmação).
+- `undo service-port` e `service-port` são comandos da configuração raiz: o
+  `undo` é enviado antes de entrar em `interface gpon` e o `service-port`
+  depois de sair dela (`quit`), respeitando o contexto da CLI.
 
 ## Sobrecarga e interrupção
 
@@ -73,9 +76,9 @@ operador.
 ## Limitações conhecidas
 
 - `display service-port` é consultado apenas em modo de leitura, para
-  descobrir o gemport e o user-vlan do service-port atual. Se a CLI não
-  expuser esses campos, a ONT fica `INCONCLUSIVO` e nenhuma alteração é
-  enviada.
+  descobrir o identificador do service-port atual (usado no `undo
+  service-port`), o gemport e o user-vlan. Se a CLI não expuser esses campos,
+  a ONT fica `INCONCLUSIVO` e nenhuma alteração é enviada.
 - Os perfis WAN/TR-069 e demais parâmetros são lidos do estado atual da
   ONT (`display ont wan-info` / `display ont ipconfig`). Se qualquer valor não
   puder ser identificado, a ONT fica `INCONCLUSIVO` e nenhuma alteração é

@@ -595,6 +595,19 @@ def comando_configurar_tr069(configuracao):
     )
 
 
+def comando_configurar_internet(configuracao):
+    """Ativa o serviço de internet do ONT (ip-index 0)."""
+    return "ont internet-config %d %d ip-index 0" % (
+        configuracao["porta"],
+        configuracao["ont_id"],
+    )
+
+
+def comando_sair_interface():
+    """Volta ao contexto de configuração raiz (necessário para o service-port)."""
+    return "quit"
+
+
 def comando_configurar_wan(configuracao):
     return "ont wan-config %d %d ip-index 0 profile-id %d" % (
         configuracao["porta"],
@@ -605,11 +618,13 @@ def comando_configurar_wan(configuracao):
 
 def comando_criar_service_port(configuracao):
     """A OLT atribui o identificador; nenhum ID é enviado no comando."""
+    caminho_gpon = "%s/%d" % (
+        configuracao["interface"], configuracao["porta"])
     return (
         "service-port vlan %d gpon %s ont %d gemport %d multi-service user-vlan %d tag-transform translate"
         % (
             _vlan(configuracao),
-            configuracao["interface"],
+            caminho_gpon,
             configuracao["ont_id"],
             int(configuracao["gemport"]),
             _vlan(configuracao),
@@ -687,7 +702,7 @@ ETAPA_VALIDACAO = "validacao"
 
 
 def _consultar_servicos(sessao, ont_id):
-    """Lista os service-ports atuais; devolve gemport e user-vlan por ID."""
+    """Lista os service-ports atuais; devolve ID, gemport e user-vlan."""
     saida = sessao.executar("display service-port")
     servicos = {}
     atual = None
@@ -704,7 +719,9 @@ def _consultar_servicos(sessao, ont_id):
                 atual = int(partes[1])
             except ValueError:
                 atual = None
-            servicos.setdefault(atual, {})
+            if atual is not None:
+                servicos.setdefault(atual, {})
+                servicos[atual]["id"] = atual
         if atual is None:
             continue
         for indice, parte in enumerate(partes):
@@ -753,6 +770,7 @@ def capturar_estado(sessao, interface, porta, ont_id):
         "wanprofile": _campos(wan_info).get("wanprofile"),
         "gemport": (servico or {}).get("gemport"),
         "user_vlan": (servico or {}).get("user-vlan") or vlane,
+        "service_port": (servico or {}).get("id"),
         "wan": _campos(wan_info).get("Service type", ""),
         "status_conexao": _campos(wan_info).get("IPv4 Connection status", ""),
         "mac": _campos(ipconfig).get("ONT MAC", ""),
@@ -760,7 +778,12 @@ def capturar_estado(sessao, interface, porta, ont_id):
 
 
 def montar_passos(interface, configuracao, estado_original):
-    """Constrói a sequência de comandos que seria executada, em ordem de execução."""
+    """Constrói a sequência de comandos que seria executada, em ordem de execução.
+
+    `undo service-port` e `service-port` são comandos da configuração raiz:
+    o primeiro é enviado antes de entrar em `interface gpon` e o segundo
+    depois de sair dela (`quit`).
+    """
     porta = configuracao["porta"]
     ont_id = configuracao["ont_id"]
     passos = []
@@ -773,7 +796,9 @@ def montar_passos(interface, configuracao, estado_original):
     passos.append(comando_configurar_pppoe(configuracao))
     passos.append(comando_native_vlan(configuracao))
     passos.append(comando_configurar_tr069(configuracao))
+    passos.append(comando_configurar_internet(configuracao))
     passos.append(comando_configurar_wan(configuracao))
+    passos.append(comando_sair_interface())
     passos.append(comando_criar_service_port(configuracao))
     passos.append(comando_exibir_wan_info(interface, porta, ont_id))
     passos.append(comando_exibir_ipconfig(porta, ont_id))
@@ -981,7 +1006,8 @@ class Orquestrador:
             estado_atual = capturar_estado(
                 self.sessao, dados["interface"], dados["porta"], dados["ont_id"])
             for campo in ("vlane", "prioridade", "srvprofile",
-                         "tr069profile", "wanprofile", "gemport"):
+                         "tr069profile", "wanprofile", "gemport",
+                         "service_port"):
                 if campo in estado_atual:
                     dados[campo] = estado_atual[campo]
             resultado = self._classificar(
@@ -1131,12 +1157,20 @@ class Orquestrador:
         capturar_estado(
             self.sessao, dados["interface"], dados["porta"], dados["ont_id"])
         return montar_passos(
-            dados["interface"], configuracao, {"service_port": None})
+            dados["interface"], configuracao,
+            {"service_port": dados.get("service_port")})
 
     def _service_port_id(self, interface, porta, ont_id):
-        # O identificador é atribuído pela OLT no comando de criação; apenas a
-        # consulta inicial permite identificar o `undo service-port`.
-        raise NotImplementedError
+        """Identificador do service-port atual da ONT, descoberto por leitura.
+
+        O valor é usado apenas no `undo service-port`; nenhum identificador
+        novo é enviado no comando de criação.
+        """
+        servicos = _consultar_servicos(self.sessao, ont_id)
+        for identificador, valores in servicos.items():
+            if valores.get("ont_id") == ont_id:
+                return valores.get("id")
+        return None
 
     def _ja_estava_configurado(self, configuracao, estado_atual):
         return False

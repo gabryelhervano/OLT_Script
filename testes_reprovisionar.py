@@ -310,6 +310,64 @@ class TestesFluxo(unittest.TestCase):
         self.assertIn("ont tr069-server-config 4 42 profile-id 1", texto)
         self.assertIn("ont wan-config 4 42 ip-index 0 profile-id 10", texto)
 
+    def test_sequencia_respeita_contexto_da_cli(self):
+        # `undo service-port` e `service-port` são comandos da configuração
+        # raiz: o primeiro vem antes de entrar em `interface gpon` e o
+        # segundo depois de sair com `quit`.
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=self.sessao,
+            executar_alteracoes=False,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0001",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0001": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        dados_por_ont = {}
+        _preparar_original = orquestrador._preparar_card
+
+        def _preparar(card, onts, indice_por_serial, indice_por_usuario):
+            for dados in onts:
+                dados_por_ont[script.chave_ont(dados)] = dados
+            return _preparar_original(
+                card, onts, indice_por_serial, indice_por_usuario)
+
+        orquestrador._preparar_card = _preparar
+        orquestrador.executar(
+            [registro], indice_por_serial, indice_por_usuario)
+        passos = orquestrador._montar_passos(dados_por_ont["0/1/4/42"])
+        comandos = [passo for passo in passos if not passo.startswith("display")]
+        # O `undo` do service-port vem na raiz, antes da interface.
+        self.assertEqual(comandos[0], "undo service-port 796")
+        self.assertEqual(comandos[1], "interface gpon 0/1")
+        # O serviço de internet precisa ser ativado.
+        self.assertIn("ont internet-config 4 42 ip-index 0", comandos)
+        # O `quit` devolve ao contexto raiz, onde o `service-port` é válido.
+        posicao_quit = comandos.index("quit")
+        self.assertTrue(comandos[posicao_quit + 1].startswith("service-port"))
+        # O caminho GPON inclui a porta (interface/porta).
+        self.assertIn(
+            "service-port vlan 2551 gpon 0/1/4 ont 42 gemport 37 "
+            "multi-service user-vlan 2551 tag-transform translate",
+            comandos)
+
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Falta o srvprofile na resposta das consultas: nada pode ser assumido,
         # então a ONT fica INCONCLUSIVO sem executar nenhum comando.
