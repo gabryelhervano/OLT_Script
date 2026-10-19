@@ -381,7 +381,8 @@ class SessaoSSH:
         usuario = self.configuracao["usuario"]
         senha = self.configuracao.get("senha", "")
         cliente = self._conectar(host, porta, usuario, senha)
-        self.sessao = cliente.invoke_shell()
+        self.sessao = cliente.invoke_shell(
+            width=self.largura, height=self.altura)
         self.conectada = True
         self.buffer = ""
         # Consome o banner de login antes de qualquer comando: sem isso as
@@ -616,6 +617,22 @@ class SessaoSSH:
             self.sessao.send(caractere)
             if atraso:
                 time.sleep(atraso)
+
+    @property
+    def largura(self):
+        """Largura do terminal (evita que a OLT quebre as linhas longas)."""
+        try:
+            return int(self.configuracao.get("largura") or 512)
+        except (TypeError, ValueError):
+            return 512
+
+    @property
+    def altura(self):
+        """Altura do terminal reportada à OLT."""
+        try:
+            return int(self.configuracao.get("altura") or 1000)
+        except (TypeError, ValueError):
+            return 1000
 
     @property
     def atraso_tecla(self):
@@ -1045,6 +1062,31 @@ _PADRAO_ONT_USUARIO = re.compile(
     r"user-account\s+username\s+\"(?P<usuario>[^\"]*)\"")
 
 
+_PALAVRAS_CONTINUACAO = (
+    "ont-srvprofile-id", "ont-lineprofile-id", "desc", "priority", "vlan",
+    "user-account", "gem", "tcont", "profile-id", "gemport", "user-vlan",
+)
+
+
+def _desembrulhar(linhas, largura=79):
+    """Junta as linhas truncadas pelo terminal.
+
+    A OLT quebra as linhas longas na largura do terminal e a continuação
+    vem na linha seguinte, indentada. Só são unidas as continuações
+    reconhecidas (evita juntar comandos diferentes). A sessão também
+    reserva um terminal largo, o que raramente torna a quebra necessária.
+    """
+    resultado = []
+    for linha in linhas:
+        if resultado and linha[:1].isspace() and linha.strip():
+            palavra = linha.strip().split()[0].lower()
+            if palavra in _PALAVRAS_CONTINUACAO:
+                resultado[-1] = resultado[-1].rstrip() + " " + linha.strip()
+                continue
+        resultado.append(linha)
+    return resultado
+
+
 def _consultar_configuracao_atual(sessao):
     """Lê a configuração corrente da OLT (somente leitura) e indexa as ONTs.
 
@@ -1056,7 +1098,7 @@ def _consultar_configuracao_atual(sessao):
     saida = sessao.executar("display current-configuration | include ont")
     perfis = {"srv": {}, "linha": {}}
     onts = {}
-    for linha in saida.splitlines():
+    for linha in _desembrulhar(saida.splitlines()):
         achado = _PADRAO_SRVPROFILE.search(linha)
         if achado:
             perfis["srv"][achado.group("nome")] = int(achado.group("id"))
@@ -1137,16 +1179,20 @@ def _consultar_ipconfig(sessao, interface, porta, ont_id):
 
 
 def _consultar_perfil_ont(sessao, interface, porta, ont_id):
-    """Lê o nome dos perfis aplicados à ONT (`display ont profile`)."""
+    """Lê o nome dos perfis aplicados à ONT (`display ont profile`).
+
+    O comando usa quadro/slot/porta separados por espaço (ex.: 0 1 4 9).
+    """
+    partes = interface.replace("/", " ")
     saida = sessao.executar(
-        "display ont profile %s %d %d" % (interface, porta, ont_id))
+        "display ont profile %s %d %d" % (partes, porta, ont_id))
     for linha in saida.splitlines():
-        partes = linha.split()
-        if len(partes) < 3 or not partes[0].isdigit():
+        partes_linha = linha.split()
+        if len(partes_linha) < 3 or not partes_linha[0].isdigit():
             continue
-        if int(partes[0]) != ont_id:
+        if int(partes_linha[0]) != ont_id:
             continue
-        return {"linha": partes[1], "srv": partes[2]}
+        return {"linha": partes_linha[1], "srv": partes_linha[2]}
     return {}
 
 
@@ -1188,6 +1234,19 @@ def _campo(campos, *chaves):
         if valor not in (None, ""):
             return valor
     return None
+
+
+def _mac_util(*fontes):
+    """Primeiro MAC válido (ignora o 0000-0000-0000 devolvido pela ONT)."""
+    for campos in fontes:
+        for chave in ("MAC address", "ONT MAC"):
+            valor = (campos or {}).get(chave)
+            if not valor:
+                continue
+            digitos = valor.replace(":", "").replace("-", "")
+            if digitos and set(digitos) != {"0"}:
+                return valor
+    return ""
 
 
 def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
@@ -1257,8 +1316,7 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
         "service_port": (servico or {}).get("id"),
         "tipo_wan": _campo(campos_wan, "Service type"),
         "status_conexao": _campo(campos_wan, "IPv4 Connection status"),
-        "mac": _campo(campos_ip, "MAC address", "ONT MAC") or
-        _campo(campos_wan, "MAC address", "ONT MAC"),
+        "mac": _mac_util(campos_ip, campos_wan),
     }
 
 

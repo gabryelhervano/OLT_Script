@@ -587,6 +587,40 @@ class TestesFluxo(unittest.TestCase):
             "ont ipconfig 4 42 pppoe vlan 2551 priority 5 user-account "
             "username \"joao\"")])
 
+    def test_linhas_truncadas_sao_reunidas(self):
+        # A OLT quebra as linhas longas na largura do terminal: a
+        # continuação do `ont add` vem na linha seguinte, indentada.
+        config = (
+            ' ont-srvprofile gpon profile-id 100 profile-name "SRV-PADRAO"\n'
+            ' ont-lineprofile gpon profile-id 10 profile-name "LINE-PADRAO"\n'
+            ' ont add 4 9 sn-auth "4857544318D0F3A1" omci ont-lineprofile-id 10\n'
+            '  ont-srvprofile-id 100 desc "marialc"\n'
+            ' ont port native-vlan 4 9 eth 1 vlan 2701 priority 0\n'
+        )
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display current-configuration | include ont", config)
+        atual = script._consultar_configuracao_atual(sessao)
+        ont = atual["onts"][(4, 9)]
+        self.assertEqual(ont["srvprofile"], 100)
+        self.assertEqual(ont["lineprofile"], 10)
+        self.assertEqual(ont["descricao"], "marialc")
+        self.assertTrue(ont["native_vlan"])
+        # O nome do perfil resolve o ID quando a linha do `ont add` não
+        # traz o `ont-srvprofile-id`.
+        self.assertEqual(atual["perfis"]["srv"]["SRV-PADRAO"], 100)
+
+    def test_display_ont_profile_usa_quadro_slot_porta(self):
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 9",
+            "  ONT-ID    Line profile name                 Service profile name\n"
+            "  -----------------------------------------------\n"
+            "       9    LINE-PADRAO                       SRV-PADRAO\n")
+        nomes = script._consultar_perfil_ont(sessao, "0/1", 4, 9)
+        self.assertEqual(nomes["linha"], "LINE-PADRAO")
+        self.assertEqual(nomes["srv"], "SRV-PADRAO")
+
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o
         # srvprofile: nada pode ser assumido, então a ONT fica INCONCLUSIVO
