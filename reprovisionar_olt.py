@@ -380,37 +380,44 @@ class SessaoSSH:
         self._entrar_em_enable()
 
     def _conectar(self, host, porta, usuario, senha):
-        """Conecta com senha; se recusada, tenta teclado-interativo.
+        """Conecta discovering o método aceito pela OLT antes de autenticar.
 
-        Alguns equipamentos Huawei aceitam apenas `keyboard-interactive` e
-        recusam a autenticação simples por senha.
+        A MA5800 usa teclado-interativo (prompt "User password:") e pode
+        bloquear novas tentativas por reentrada. Por isso a conexão é feita
+        uma única vez: primeiro descobrimos os métodos aceitos e só então
+        autenticamos, sem provocar uma tentativa recusada.
         """
-        cliente = paramiko.SSHClient()
-        cliente.load_system_host_keys()
-        cliente.set_missing_host_key_policy(paramiko.RejectPolicy())
-        try:
-            cliente.connect(host, port=porta, username=usuario,
-                           password=senha, look_for_keys=False,
-                           allow_agent=False)
-            return cliente
-        except paramiko.AuthenticationException as erro:
-            logger.info("senha recusada (%s); tentando teclado-interativo",
-                        erro)
-        # Fallback: teclado-interativo (a MA5800 apresenta o prompt
-        # "User password:" nesse método, que o paramiko não cobre no
-        # caminho de senha simples).
         transporte = paramiko.Transport((host, porta))
         try:
             transporte.start_client(timeout=20)
-            transporte.auth_interactive(
-                usuario, lambda titulo, instrucoes, perguntas: [
-                    senha for _ in perguntas])
+            metodos = self._metodos_aceitos(transporte, usuario)
+            if "keyboard-interactive" in metodos:
+                logger.info("autenticando por teclado-interativo")
+                transporte.auth_interactive(
+                    usuario, lambda titulo, instrucoes, perguntas: [
+                        senha for _ in perguntas])
+            else:
+                logger.info("autenticando por senha (metodos: %s)",
+                            ",".join(metodos) or "desconhecido")
+                transporte.auth_password(usuario, senha)
         except Exception:
             transporte.close()
             raise
         cliente = paramiko.SSHClient()
+        cliente.load_system_host_keys()
+        cliente.set_missing_host_key_policy(paramiko.RejectPolicy())
         cliente._transport = transporte
         return cliente
+
+    def _metodos_aceitos(self, transporte, usuario):
+        """Métodos de autenticação aceitos pelo servidor (sem falhar)."""
+        try:
+            transporte.auth_none(usuario)
+            return []
+        except paramiko.BadAuthenticationType as erro:
+            return list(erro.allowed_types)
+        except paramiko.AuthenticationException:
+            return []
 
     def _entrar_em_enable(self):
         """Entra no modo privilegiado (`enable`), exigido por parte das CLIs.
