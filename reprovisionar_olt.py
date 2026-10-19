@@ -371,17 +371,47 @@ class SessaoSSH:
     def conectar(self):
         host = self.configuracao["host"]
         porta = int(self.configuracao["porta"])
-        chave = self.configuracao["chave"]
-        cliente = paramiko.SSHClient()
-        cliente.load_system_host_keys()
-        cliente.set_missing_host_key_policy(paramiko.RejectPolicy())
-        cliente.connect(host, port=porta, username=self.configuracao["usuario"],
-                      password=self.configuracao.get("senha", ""), look_for_keys=False,
-                      allow_agent=False)
+        usuario = self.configuracao["usuario"]
+        senha = self.configuracao.get("senha", "")
+        cliente = self._conectar(host, porta, usuario, senha)
         self.sessao = cliente.invoke_shell()
         self.conectada = True
         self.buffer = ""
         self._entrar_em_enable()
+
+    def _conectar(self, host, porta, usuario, senha):
+        """Conecta com senha; se recusada, tenta teclado-interativo.
+
+        Alguns equipamentos Huawei aceitam apenas `keyboard-interactive` e
+        recusam a autenticação simples por senha.
+        """
+        cliente = paramiko.SSHClient()
+        cliente.load_system_host_keys()
+        cliente.set_missing_host_key_policy(paramiko.RejectPolicy())
+        try:
+            cliente.connect(host, port=porta, username=usuario,
+                           password=senha, look_for_keys=False,
+                           allow_agent=False)
+            return cliente
+        except paramiko.AuthenticationException as erro:
+            logger.info("senha recusada (%s); tentando teclado-interativo",
+                        erro)
+        transporte = paramiko.Transport((host, porta))
+        try:
+            transporte.connect(username=usuario, password=senha)
+        except Exception:
+            transporte.close()
+            raise
+        try:
+            transporte.auth_interactive(
+                usuario, lambda titulo, instrucoes, perguntas: [
+                    senha for _ in perguntas])
+        except Exception:
+            transporte.close()
+            raise
+        cliente = paramiko.SSHClient()
+        cliente._transport = transporte
+        return cliente
 
     def _entrar_em_enable(self):
         """Entra no modo privilegiado (`enable`), exigido por parte das CLIs.
@@ -1714,6 +1744,12 @@ def main(argv=None):
                 print("     acrescente com:")
                 print("       ssh-keyscan -H %s >> ~/.ssh/known_hosts"
                       % configuracao["host"])
+            elif "Authentication" in str(erro) or "authentication" in str(erro):
+                print("     a OLT recusou a autenticacao. conferir:")
+                print("       - usuario e senha em config.ini")
+                print("       - se a conta exige troca de senha no primeiro acesso")
+                print("       - teste manual: ssh %s@%s"
+                      % (configuracao["usuario"], configuracao["host"]))
             print("     use --mock para rodar sem OLT (dados simulados).")
             return 1
     else:
