@@ -61,6 +61,7 @@ _PADROES_CONFIG = {
     "chave": ("OLT_CHAVE", ""),
     "senha_enable": ("OLT_SENHA_ENABLE", ""),
     "enable": ("OLT_ENABLE", "enable"),
+    "banner": ("OLT_BANNER", "SSH-2.0-OpenSSH_8.9p1"),
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
     "portas": ("OLT_PORTAS", "0-15"),
@@ -388,6 +389,12 @@ class SessaoSSH:
         autenticamos, sem provocar uma tentativa recusada.
         """
         transporte = paramiko.Transport((host, porta))
+        # Algumas OLTs resetam a conexão quando o identification string do
+        # cliente não é reconhecido; o padrão é o do OpenSSH.
+        identificacao = (self.configuracao.get("banner") or
+                         "SSH-2.0-OpenSSH_8.9p1").strip()
+        if identificacao:
+            transporte.local_version = identificacao
         try:
             transporte.start_client(timeout=20)
             metodos = self._metodos_aceitos(transporte, usuario)
