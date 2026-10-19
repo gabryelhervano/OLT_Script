@@ -62,6 +62,7 @@ _PADROES_CONFIG = {
     "senha_enable": ("OLT_SENHA_ENABLE", ""),
     "enable": ("OLT_ENABLE", "enable"),
     "screen_length": ("OLT_SCREEN_LENGTH", "screen-length 0 temporary"),
+    "terminador": ("OLT_TERMINADOR", "cr"),
     "banner": ("OLT_BANNER", "SSH-2.0-OpenSSH_8.9p1"),
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
@@ -441,15 +442,24 @@ class SessaoSSH:
         """Entra no modo privilegiado (`enable`), exigido por parte das CLIs.
 
         Sem isso, a OLT recusa os comandos de configuração (o prompt fica em
-        `>` e não em `#`).
+        `>` e não em `#`). O comando é repetido uma vez porque algumas CLIs
+        perdem o primeiro envio (ainda processando o banner de login).
         """
         comando = (self.configuracao.get("enable") or "enable").strip()
         if not comando:
             return
         senha = (self.configuracao.get("senha_enable") or
                  self.configuracao.get("senha") or "")
+        for tentativa in range(2):
+            saida = self._executar_enable(comando, senha)
+            if "#" in saida:
+                return
+        logger.warning("modo privilegiado (enable) nao confirmado: %s",
+                       _resumo(saida))
+
+    def _executar_enable(self, comando, senha):
         self.comandos.append(comando)
-        self.sessao.send(comando + "\r")
+        self.sessao.send(comando + self.terminador)
         saida = self._ler_ate(
             lambda texto: "password" in texto.lower() or
             self._prompt_no_buffer(texto), 10)
@@ -457,11 +467,15 @@ class SessaoSSH:
             if not senha:
                 raise ErroOperacao(
                     "a OLT pediu senha de enable (OLT_SENHA_ENABLE)")
-            self.sessao.send(senha + "\r")
+            self.sessao.send(senha + self.terminador)
             saida = self._ler_ate(self._prompt_no_buffer, 10)
-        if "#" not in saida:
-            logger.warning("modo privilegiado (enable) nao confirmado: %s",
-                           _resumo(saida))
+        return saida
+
+    @property
+    def terminador(self):
+        """Terminador de linha enviado à CLI (CR, LF ou CRLF)."""
+        valor = str(self.configuracao.get("terminador") or "cr").strip().lower()
+        return {"lf": "\n", "crlf": "\r\n", "cr": "\r"}.get(valor, "\r")
 
     def _desativar_paginacao(self):
         """Desliga a paginação da CLI (evita o prompt `--More--`).
@@ -482,7 +496,7 @@ class SessaoSSH:
                 candidatos.append(variante)
         for comando in candidatos:
             self.comandos.append(comando)
-            self.sessao.send(comando + "\r")
+            self.sessao.send(comando + self.terminador)
             saida = self._ler_ate(self._prompt_no_buffer, 10)
             if not _comando_desconhecido(saida):
                 logger.info("paginacao da CLI desativada (%s)", comando)
@@ -498,7 +512,7 @@ class SessaoSSH:
         if not comando:
             return ""
         self.comandos.append(comando)
-        self.sessao.send(comando + "\r")
+        self.sessao.send(comando + self.terminador)
         return self._ler_ate(self._prompt_no_buffer, self.timeout)
 
     def _ler_ate(self, predicado, timeout):
@@ -1824,6 +1838,26 @@ def _executar_diagnostico(sessao, configuracao, seletor):
             print("   %-15s: %s" % (flag, "sim" if estado.get(flag) else "não"))
 
 
+def _executar_teste_cli(sessao, configuracao):
+    """Envia comandos inofensivos e mostra a resposta crua da CLI.
+
+    Serve para conferir se a sessão está sincronizada e se os comandos
+    realmente chegam ao equipamento.
+    """
+    for comando in ("display version", "display clock"):
+        try:
+            saida = sessao.executar(comando)
+        except ErroOperacao as erro:
+            print("--- %s ---" % comando)
+            print("  ERRO: %s" % erro)
+            continue
+        print("--- %s ---" % comando)
+        for linha in saida.splitlines():
+            print("  %s" % linha)
+    print("--- prompt atual ---")
+    print("  (o modo privilegiado aparece como '#' no fim do prompt)")
+
+
 def main(argv=None):
     _configurar_codificacao()
     argumentos = _parse_argumentos(argv)
@@ -1853,8 +1887,11 @@ def main(argv=None):
     seletor = {"ont_id": argumentos.ont_id, "serial": argumentos.serial}
     if argumentos.testar_ssh:
         sessao = conectar_ssh(configuracao)
-        sessao.fechar()
-        print("conexão SSH ok")
+        try:
+            print("conexão SSH ok")
+            _executar_teste_cli(sessao, configuracao)
+        finally:
+            sessao.fechar()
         print("concluído")
         return 0
     if executar or not argumentos.mock:
