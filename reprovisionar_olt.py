@@ -63,6 +63,7 @@ _PADROES_CONFIG = {
     "enable": ("OLT_ENABLE", "enable"),
     "screen_length": ("OLT_SCREEN_LENGTH", "screen-length 0 temporary"),
     "terminador": ("OLT_TERMINADOR", "cr"),
+    "atraso_tecla": ("OLT_ATRASO_TECLA", "0.01"),
     "banner": ("OLT_BANNER", "SSH-2.0-OpenSSH_8.9p1"),
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
@@ -459,7 +460,7 @@ class SessaoSSH:
 
     def _executar_enable(self, comando, senha):
         self.comandos.append(comando)
-        self.sessao.send(comando + self.terminador)
+        self._enviar(comando + self.terminador)
         saida = self._ler_ate(
             lambda texto: "password" in texto.lower() or
             self._prompt_no_buffer(texto), 10)
@@ -467,7 +468,7 @@ class SessaoSSH:
             if not senha:
                 raise ErroOperacao(
                     "a OLT pediu senha de enable (OLT_SENHA_ENABLE)")
-            self.sessao.send(senha + self.terminador)
+            self._enviar(senha + self.terminador)
             saida = self._ler_ate(self._prompt_no_buffer, 10)
         return saida
 
@@ -496,7 +497,7 @@ class SessaoSSH:
                 candidatos.append(variante)
         for comando in candidatos:
             self.comandos.append(comando)
-            self.sessao.send(comando + self.terminador)
+            self._enviar(comando + self.terminador)
             saida = self._ler_ate(self._prompt_no_buffer, 10)
             if not _comando_desconhecido(saida):
                 logger.info("paginacao da CLI desativada (%s)", comando)
@@ -512,17 +513,37 @@ class SessaoSSH:
         if not comando:
             return ""
         self.comandos.append(comando)
-        self.sessao.send(comando + self.terminador)
+        self._enviar(comando + self.terminador)
         return self._ler_ate(self._prompt_no_buffer, self.timeout)
+
+    def _enviar(self, texto):
+        """Envia o texto à CLI caractere a caractere.
+
+        Algumas CLIs da VRP descartam caracteres quando o texto chega rápido
+        demais (os espaços somem do comando enviado).
+        """
+        atraso = self.atraso_tecla
+        for caractere in texto:
+            self.sessao.send(caractere)
+            if atraso:
+                time.sleep(atraso)
+
+    @property
+    def atraso_tecla(self):
+        """Pausa entre caracteres enviados (evita perda de caracteres)."""
+        try:
+            return float(self.configuracao.get("atraso_tecla") or 0.01)
+        except (TypeError, ValueError):
+            return 0.01
 
     def _ler_ate(self, predicado, timeout):
         """Lê a saída até o predicado ser satisfeito (ou o timeout)."""
         inicio = time.monotonic()
-        saida = ""
+        partes = []
         while True:
             disponivel, _, _ = select.select([self.sessao], [], [], 1)
             if not disponivel:
-                if predicado(saida):
+                if predicado("".join(partes)):
                     break
                 if time.monotonic() - inicio > timeout:
                     raise ErroOperacao("timeout na execução do comando")
@@ -530,10 +551,27 @@ class SessaoSSH:
             dados = self.sessao.recv(4096)
             if not dados:
                 break
-            saida += dados.decode("utf-8", "replace")
-            if predicado(saida):
+            partes.append(dados.decode("utf-8", "replace"))
+            if predicado("".join(partes)):
+                # Coleta o que ainda estiver chegando: sem isso a resposta
+                # seguinte seria lida no comando seguinte (desalinhamento).
+                partes.append(self._drenar())
                 break
-        return saida
+        return "".join(partes)
+
+    def _drenar(self, espera=0.4):
+        """Recolhe dados que ainda estejam chegando após o prompt."""
+        fim = time.monotonic() + espera
+        partes = []
+        while time.monotonic() < fim:
+            disponivel, _, _ = select.select([self.sessao], [], [], 0.05)
+            if not disponivel:
+                continue
+            dados = self.sessao.recv(4096)
+            if not dados:
+                break
+            partes.append(dados.decode("utf-8", "replace"))
+        return "".join(partes)
 
     @property
     def timeout(self):
