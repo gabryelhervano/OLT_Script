@@ -61,7 +61,7 @@ _PADROES_CONFIG = {
     "chave": ("OLT_CHAVE", ""),
     "senha_enable": ("OLT_SENHA_ENABLE", ""),
     "enable": ("OLT_ENABLE", "enable"),
-    "screen_length": ("OLT_SCREEN_LENGTH", "auto"),
+    "screen_length": ("OLT_SCREEN_LENGTH", "screen-length 0 temporary"),
     "banner": ("OLT_BANNER", "SSH-2.0-OpenSSH_8.9p1"),
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
@@ -456,12 +456,11 @@ class SessaoSSH:
                            _resumo(saida))
 
     def _desativar_paginacao(self):
-        """Tenta desligar a paginação da CLI (evita o prompt `--More--`).
+        """Desliga a paginação da CLI (evita o prompt `--More--`).
 
-        O comando varia entre firmwares da VRP, então as variantes são
-        testadas uma a uma. Se nenhuma for aceita, o fluxo continua: a
-        leitura tem uma rede de segurança que envia espaço quando a CLI
-        pagina.
+        `screen-length 0 temporary` é o padrão da VRP: a saída inteira vem
+        numa tela, sem esperar tecla. A forma temporária vale só para a
+        sessão e não altera a configuração do equipamento.
         """
         configurado = (self.configuracao.get("screen_length") or
                        "auto").strip().lower()
@@ -470,7 +469,9 @@ class SessaoSSH:
         candidatos = []
         if configurado not in ("auto", ""):
             candidatos.append(configurado)
-        candidatos.extend(["screen-length 0 temporary", "screen-length disable"])
+        for variante in ("screen-length 0 temporary", "screen-length disable"):
+            if variante not in candidatos:
+                candidatos.append(variante)
         for comando in candidatos:
             self.comandos.append(comando)
             self.sessao.send(comando + "\r")
@@ -478,8 +479,9 @@ class SessaoSSH:
             if not _comando_desconhecido(saida):
                 logger.info("paginacao da CLI desativada (%s)", comando)
                 return
-        logger.info("a CLI nao aceitou screen-length; a leitura seguira "
-                    "automatica mesmo com paginacao")
+        logger.warning(
+            "a CLI nao aceitou screen-length; listagens longas podem expirar "
+            "(defina screen_length em config.ini)")
 
     def executar(self, comando):
         if not self.conectada:
@@ -506,24 +508,10 @@ class SessaoSSH:
             dados = self.sessao.recv(4096)
             if not dados:
                 break
-            texto = dados.decode("utf-8", "replace")
-            if self._solicita_mais(texto):
-                # A CLI paginou a saída e espera uma tecla: envia espaço e
-                # segue lendo.
-                self.sessao.send(" ")
-                continue
-            saida += texto
+            saida += dados.decode("utf-8", "replace")
             if predicado(saida):
                 break
         return saida
-
-    def _solicita_mais(self, texto):
-        """Indica se a saída termina com o prompt de paginação da CLI."""
-        linhas = [linha for linha in texto.splitlines() if linha.strip()]
-        if not linhas:
-            return False
-        ultima = linhas[-1].strip()
-        return "more" in ultima.lower() and ultima.endswith("-")
 
     @property
     def timeout(self):
