@@ -59,6 +59,7 @@ _PADROES_CONFIG = {
     "chave": ("OLT_CHAVE", ""),
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
+    "portas": ("OLT_PORTAS", "0-15"),
 }
 
 
@@ -454,39 +455,59 @@ def _salvar_ont(onts, atual, campos):
     }
 
 
-def listar_onts(sessao):
-    """Lista as ONTs presentes na OLT; retorna dicionários por ID da ONT.
+_PADRAO_POTENCIA = re.compile(r"^-?[\d.]+/-?[\d.]+$|^-/-")
 
-    A resposta depende da CLI; linhas que apresentam `ONT ID` iniciam um novo
-    equipamento. Os demais campos são capturados quando a CLI os apresenta.
+
+def _parse_resumo_onts(saida, interface, porta):
+    """Interpreta `display ont info summary <fsp>`; devolve as ONTs da porta.
+
+    A resposta traz duas tabelas: a primeira com o estado de execução
+    (online/offline) e a segunda com SN, tipo e descrição. A descrição é o
+    texto configurado em `ont add ... desc`, que neste caso é o usuário.
     """
-    saida = sessao.executar("display ont")
-    onts = {}
-    atual = None
-    campos = {}
+    estados = {}
+    onts = []
     for linha in saida.splitlines():
         linha = linha.strip()
         if not linha:
             continue
-        if "ONT ID" in linha:
-            if atual is not None:
-                _salvar_ont(onts, atual, campos)
-            campos = _campos(linha)
-            try:
-                atual = int(campos["ONT ID"])
-            except (KeyError, ValueError):
-                atual = None
-            if atual is not None:
-                onts.setdefault(atual, {"ont_id": atual})
+        partes = linha.split()
+        if not partes[0].isdigit() or len(partes) < 2:
             continue
-        if atual is None or ":" not in linha:
+        try:
+            ont_id = int(partes[0])
+        except ValueError:
             continue
-        chave, valor = linha.split(":", 1)
-        chave = chave.strip()
-        if chave in ("F/S/P", "Serial", "ONT MAC", "Service type"):
-            campos[chave] = valor.strip()
-    if atual is not None:
-        _salvar_ont(onts, atual, campos)
+        if partes[1].lower() in ("online", "offline"):
+            estados[ont_id] = partes[1].lower()
+            continue
+        serial = partes[1]
+        descricao = ""
+        for indice, parte in enumerate(partes):
+            if _PADRAO_POTENCIA.match(parte):
+                descricao = " ".join(partes[indice + 1:])
+                break
+        onts.append({
+            "ont_id": ont_id,
+            "F/S/P": "%s/%d" % (interface, porta),
+            "Serial": serial,
+            "Description": descricao,
+            "estado": estados.get(ont_id, ""),
+        })
+    return onts
+
+
+def listar_onts(sessao, interface, portas):
+    """Lista as ONTs presentes na OLT; retorna dicionários por ID da ONT.
+
+    A leitura é feita porta a porta com `display ont info summary <fsp>`.
+    """
+    onts = {}
+    for porta in portas:
+        saida = sessao.executar(
+            "display ont info summary %s/%d" % (interface, porta))
+        for ont in _parse_resumo_onts(saida, interface, porta):
+            onts[ont["ont_id"]] = ont
     return onts
 
 
@@ -703,7 +724,7 @@ ETAPA_VALIDACAO = "validacao"
 
 def _consultar_servicos(sessao, ont_id):
     """Lista os service-ports atuais; devolve ID, gemport e user-vlan."""
-    saida = sessao.executar("display service-port")
+    saida = sessao.executar("display service-port all")
     servicos = {}
     atual = None
     for linha in saida.splitlines():
@@ -741,6 +762,15 @@ def _consultar_servicos(sessao, ont_id):
     return servicos
 
 
+def _campo(campos, *chaves):
+    """Devolve o primeiro campo presente entre as chaves informadas."""
+    for chave in chaves:
+        valor = campos.get(chave)
+        if valor not in (None, ""):
+            return valor
+    return None
+
+
 def capturar_estado(sessao, interface, porta, ont_id):
     """Registra o estado atual da ONT, sem executar nenhum comando de alteração.
 
@@ -757,23 +787,31 @@ def capturar_estado(sessao, interface, porta, ont_id):
     for identificador, valores in servicos.items():
         if valores.get("ont_id") == ont_id:
             servico = valores
-    vlane = _campos(ipconfig).get("ONT manage VLAN", "")
+    campos_wan = _campos(wan_info)
+    campos_ip = _campos(ipconfig)
+    vlane = _campo(campos_ip, "Manage VLAN", "ONT manage VLAN")
+    if not vlane:
+        vlane = _campo(campos_wan, "Manage VLAN", "ONT manage VLAN")
     if not vlane:
         raise ErroOperacao("VLAN atual não identificada")
     return {
-        "usuario": _campos(ipconfig).get("PPPoE username", ""),
+        "usuario": _campo(campos_ip, "PPPoE username", "Username"),
         "vlane": vlane,
-        "prioridade": _campos(ipconfig).get("ONT manage priority", ""),
-        "configuracao": _campos(ipconfig).get("ONT config type", ""),
-        "srvprofile": _campos(wan_info).get("srvprofile"),
-        "tr069profile": _campos(wan_info).get("tr069profile"),
-        "wanprofile": _campos(wan_info).get("wanprofile"),
+        "prioridade": _campo(
+            campos_ip, "Manage priority", "ONT manage priority"),
+        "configuracao": _campo(campos_ip, "ONT config type", "Config type"),
+        "srvprofile": _campo(campos_wan, "srvprofile", "Service profile ID",
+                              "ONT service profile ID"),
+        "tr069profile": _campo(campos_wan, "tr069profile",
+                               "TR-069 profile ID", "TR069 profile ID"),
+        "wanprofile": _campo(campos_wan, "wanprofile", "WAN profile ID"),
         "gemport": (servico or {}).get("gemport"),
         "user_vlan": (servico or {}).get("user-vlan") or vlane,
         "service_port": (servico or {}).get("id"),
-        "wan": _campos(wan_info).get("Service type", ""),
-        "status_conexao": _campos(wan_info).get("IPv4 Connection status", ""),
-        "mac": _campos(ipconfig).get("ONT MAC", ""),
+        "wan": _campo(campos_wan, "Service type"),
+        "status_conexao": _campo(campos_wan, "IPv4 Connection status"),
+        "mac": _campo(campos_ip, "MAC address", "ONT MAC") or
+        _campo(campos_wan, "MAC address", "ONT MAC"),
     }
 
 
@@ -1003,8 +1041,17 @@ class Orquestrador:
             identificador = chave_ont(dados)
             if identificador in self.concluidos:
                 continue
-            estado_atual = capturar_estado(
-                self.sessao, dados["interface"], dados["porta"], dados["ont_id"])
+            try:
+                estado_atual = capturar_estado(
+                    self.sessao, dados["interface"], dados["porta"],
+                    dados["ont_id"])
+            except ErroOperacao as erro:
+                # Uma ONT ilegível não interrompe as demais do card.
+                self.resultados[identificador] = {
+                    "classe": ESTADO_INCONCLUSIVO,
+                    "motivo": "estado não identificado: %s" % erro,
+                }
+                continue
             for campo in ("vlane", "prioridade", "srvprofile",
                          "tr069profile", "wanprofile", "gemport",
                          "service_port"):
@@ -1040,11 +1087,29 @@ class Orquestrador:
 
     def _listar_onts(self):
         try:
-            onts = listar_onts(self.sessao)
+            onts = listar_onts(
+                self.sessao, self.configuracao["interface"], self._portas())
         except ErroOperacao as erro:
             logger.error("consulta de ONTs falhou: %s", erro)
             return []
         return [self._dados(ont) for ont in self._filtrar(onts.values())]
+
+    def _portas(self):
+        """Portas GPON a consultar; configurável, com todas como padrão."""
+        configuradas = self.configuracao.get("portas")
+        if not configuradas:
+            return list(range(16))
+        portas = []
+        for item in str(configuradas).split(","):
+            item = item.strip()
+            if not item:
+                continue
+            if "-" in item:
+                inicio, fim = item.split("-", 1)
+                portas.extend(range(int(inicio), int(fim) + 1))
+            else:
+                portas.append(int(item))
+        return portas
 
     def _filtrar(self, onts):
         selecionado = {}
@@ -1065,7 +1130,8 @@ class Orquestrador:
                   indice_por_usuario):
         ont_atual = {
             "serial": dados.get("serial") or "",
-            "usuario": estado_atual.get("usuario") or "",
+            "usuario": estado_atual.get("usuario") or
+            dados.get("descricao") or "",
         }
         return classificar(ont_atual, indice_por_serial, indice_por_usuario)
 
@@ -1188,6 +1254,8 @@ class Orquestrador:
             "usuario": atual.get("usuario") or "",
             "senha": atual.get("senha") or "",
             "gemport": atual.get("gemport") or "",
+            "descricao": atual.get("Description") or "",
+            "situacao": atual.get("estado") or "",
         }
 
 

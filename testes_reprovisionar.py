@@ -104,7 +104,7 @@ class TestesClassificacao(unittest.TestCase):
                 "usuario": "joao",
                 "senha": "1234",
                 "mac": "00:11:22:33:44:55",
-                "serial": "HWTC0001",
+                "serial": "HWTC0D3BDDA7",
                 "estado": "VALIDO",
             },
             {
@@ -127,7 +127,7 @@ class TestesClassificacao(unittest.TestCase):
 
     def test_padrao_um_completo(self):
         resultado = self.classificar({
-            "serial": "HWTC0001",
+            "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
         })
         self.assertEqual(resultado["classe"], script.PADRAO_1_COMPLETA)
@@ -148,7 +148,7 @@ class TestesClassificacao(unittest.TestCase):
 
     def test_divergencia_bloqueia(self):
         resultado = self.classificar({
-            "serial": "HWTC0001",
+            "serial": "HWTC0D3BDDA7",
             "usuario": "maria",
         })
         self.assertEqual(resultado["classe"], script.BLOQUEADA_DIVERGENCIA)
@@ -161,34 +161,71 @@ class TestesClassificacao(unittest.TestCase):
         self.assertEqual(resultado["classe"], script.IGNORADA_SEM_IDENTIFICADORES)
 
 
+RESPOSTA_RESUMO_ONTS = """  In port 0/1/4, the total of ONTs are: 2, online: 1
+  ------------------------------------------------------------------------------
+  ONT  Run     Last                Last                Last
+  ID   State   UpTime              DownTime            DownCause
+  ------------------------------------------------------------------------------
+  42   online  2026-10-16 10:51:06 2026-10-16 10:47:01 dying-gasp
+  43   offline 2026-10-16 14:40:18 2026-10-17 00:06:43 dying-gasp
+  ------------------------------------------------------------------------------
+  ONT        SN        Type          Distance Rx/Tx power  Description
+  ID                                    (m)      (dBm)
+  ------------------------------------------------------------------------------
+  42  HWTC0D3BDDA7 HG8145V5         827   -20.55/2.30  joao
+  43  HWTC0D3BDDA9 HG8245W5-6T      -     -/-          maria
+  ------------------------------------------------------------------------------
+"""
+
+
 class TestesFluxo(unittest.TestCase):
     def setUp(self):
         self.sessao = script.SessaoSimulada()
         self.sessao.definir_resposta(
-            "display ont", "ONT ID : 42\n  F/S/P : 0/1/4\n  Serial : HWTC0001\n")
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
         self.sessao.definir_resposta(
-            "display service-port",
+            "display service-port all",
             "Service-port 796 vlan 2551 gpon 0/1/4 ont 42 gemport 37 "
             "multi-service user-vlan 2551 tag-transform translate")
         self.sessao.definir_resposta(
             "display ont wan-info 0/1 4 42",
             "  srvprofile: 100\n"
             "  tr069profile: 1\n  wanprofile: 10\n"
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  MAC address : AC8D-34D9-BD67\n"
             "  Service type : Tr069, Internet\n"
             "  IPv4 Connection status : Connected\n")
         self.sessao.definir_resposta(
             "display ont ipconfig 4 42",
             "  PPPoE username : joao\n"
-            "  ONT MAC : 00:11:22:33:44:55\n"
-            "  ONT manage VLAN : 2551\n"
-            "  ONT manage priority : 5\n")
+            "  ONT config type : PPPoE\n"
+            "  MAC address : 00:11:22:33:44:55\n"
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n")
+        self.sessao.definir_resposta(
+            "display ont wan-info 0/1 4 43",
+            "  srvprofile: 100\n"
+            "  tr069profile: 1\n  wanprofile: 10\n"
+            "  Manage VLAN : 2552\n"
+            "  Manage priority : 5\n"
+            "  MAC address : AC8D-34D9-BD68\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        self.sessao.definir_resposta(
+            "display ont ipconfig 4 43",
+            "  PPPoE username : maria\n"
+            "  ONT config type : PPPoE\n"
+            "  MAC address : 00:11:22:33:44:56\n"
+            "  Manage VLAN : 2552\n"
+            "  Manage priority : 5\n")
 
     def _configuracao(self):
         return {
             "porta": 4,
             "ont_id": 42,
             "interface": "0/1",
-            "serial": "HWTC0001",
+            "serial": "HWTC0D3BDDA7",
             "descricao": "joao",
             "lineprofile": 11,
             "srvprofile": 100,
@@ -205,7 +242,7 @@ class TestesFluxo(unittest.TestCase):
         indice = {}
         for registro in (
             {
-                "serial": "HWTC0001",
+                "serial": "HWTC0D3BDDA7",
                 "usuario": "joao",
                 "senha": "1234",
             },
@@ -271,13 +308,13 @@ class TestesFluxo(unittest.TestCase):
             "interface": "0/1",
             "porta": 4,
             "ont_id": 42,
-            "serial": "HWTC0001",
+            "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
             "senha": "1234",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
-        indice_por_serial = {"HWTC0001": [registro]}
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
         indice_por_usuario = {"joao": [registro]}
         dados_por_ont = {}
         _preparar_original = orquestrador._preparar_card
@@ -332,13 +369,13 @@ class TestesFluxo(unittest.TestCase):
             "interface": "0/1",
             "porta": 4,
             "ont_id": 42,
-            "serial": "HWTC0001",
+            "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
             "senha": "1234",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
-        indice_por_serial = {"HWTC0001": [registro]}
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
         indice_por_usuario = {"joao": [registro]}
         dados_por_ont = {}
         _preparar_original = orquestrador._preparar_card
@@ -368,27 +405,98 @@ class TestesFluxo(unittest.TestCase):
             "multi-service user-vlan 2551 tag-transform translate",
             comandos)
 
-    def test_bloqueio_quando_valor_nao_e_descoberto(self):
-        # Falta o srvprofile na resposta das consultas: nada pode ser assumido,
-        # então a ONT fica INCONCLUSIVO sem executar nenhum comando.
+    def test_listagem_interpreta_resumo_da_porta(self):
+        # `display ont info summary <fsp>` traz duas tabelas: estado e
+        # SN/tipo/descrição. A descrição é o usuário configurado no `desc`.
+        onts = script.listar_onts(self.sessao, "0/1", [4])
+        self.assertEqual(sorted(onts), [42, 43])
+        ont = onts[42]
+        self.assertEqual(ont["Serial"], "HWTC0D3BDDA7")
+        self.assertEqual(ont["Description"], "joao")
+        self.assertEqual(ont["F/S/P"], "0/1/4")
+        self.assertEqual(ont["estado"], "online")
+        self.assertEqual(onts[43]["estado"], "offline")
+
+    def test_ont_ilegivel_nao_interrompe_o_card(self):
+        # Sem resposta de leitura, a ONT fica INCONCLUSIVO e as demais do
+        # mesmo card continuam sendo processadas.
         sessao = script.SessaoSimulada()
         sessao.definir_resposta(
-            "display ont", "ONT ID : 42\n  F/S/P : 0/1/4\n  Serial : HWTC0001\n")
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
         sessao.definir_resposta(
-            "display service-port",
+            "display service-port all",
             "Service-port 796 vlan 2551 gpon 0/1/4 ont 42 gemport 37 "
             "multi-service user-vlan 2551 tag-transform translate")
         sessao.definir_resposta(
             "display ont wan-info 0/1 4 42",
-            "  tr069profile: 1\n  wanprofile: 10\n"
+            "  srvprofile: 100\n  tr069profile: 1\n  wanprofile: 10\n"
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
             "  Service type : Tr069, Internet\n"
             "  IPv4 Connection status : Connected\n")
         sessao.definir_resposta(
             "display ont ipconfig 4 42",
             "  PPPoE username : joao\n"
-            "  ONT MAC : 00:11:22:33:44:55\n"
-            "  ONT manage VLAN : 2551\n"
-            "  ONT manage priority : 5\n")
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=False,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resultados = orquestrador.executar(
+            [registro], indice_por_serial, indice_por_usuario)
+        self.assertEqual(
+            resultados["0/1/4/43"]["classe"], script.ESTADO_INCONCLUSIVO)
+        self.assertEqual(
+            resultados["0/1/4/42"]["classe"], script.PADRAO_1_COMPLETA)
+
+    def test_bloqueio_quando_valor_nao_e_descoberto(self):
+        # Falta o srvprofile na resposta das consultas: nada pode ser assumido,
+        # então a ONT fica INCONCLUSIVO sem executar nenhum comando.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all",
+            "Service-port 796 vlan 2551 gpon 0/1/4 ont 42 gemport 37 "
+            "multi-service user-vlan 2551 tag-transform translate")
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  tr069profile: 1\n  wanprofile: 10\n"
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  MAC address : 00:11:22:33:44:55\n"
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n")
         configuracao = {
             "host": "127.0.0.1",
             "porta": "22",
@@ -407,13 +515,13 @@ class TestesFluxo(unittest.TestCase):
             "interface": "0/1",
             "porta": 4,
             "ont_id": 42,
-            "serial": "HWTC0001",
+            "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
             "senha": "1234",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
-        indice_por_serial = {"HWTC0001": [registro]}
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
         indice_por_usuario = {"joao": [registro]}
         resposta_original = script._confirmar
         script._confirmar = lambda mensagem: True

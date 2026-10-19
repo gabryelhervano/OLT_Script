@@ -7,10 +7,11 @@ operador.
 ## O que depende da CLI real da OLT
 
 - Os comandos usados são exatamente os observados na MA5800 V100R021
-  (`display ont`, `display ont wan-info`, `display ont ipconfig`,
-  `ont delete/add`, `ont ipconfig`, `ont port native-vlan`,
-  `ont tr069-server-config`, `ont internet-config`, `ont wan-config`,
-  `service-port`, `undo service-port`, `display`).
+  (`display ont info summary <fsp>`, `display ont wan-info`,
+  `display ont ipconfig`, `display service-port all`, `ont delete/add`,
+  `ont ipconfig`, `ont port native-vlan`, `ont tr069-server-config`,
+  `ont internet-config`, `ont wan-config`, `service-port`,
+  `undo service-port`, `display`).
 - Outras versões ou modelos podem não suportar algum comando usado, ou
   interpretar a resposta de forma diferente. A camada SSH registra as
   respostas; comandos que falham são tratados como falha, nunca ignorados.
