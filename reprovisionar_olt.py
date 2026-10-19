@@ -61,6 +61,7 @@ _PADROES_CONFIG = {
     "chave": ("OLT_CHAVE", ""),
     "senha_enable": ("OLT_SENHA_ENABLE", ""),
     "enable": ("OLT_ENABLE", "enable"),
+    "screen_length": ("OLT_SCREEN_LENGTH", "screen-length 0 temporary"),
     "banner": ("OLT_BANNER", "SSH-2.0-OpenSSH_8.9p1"),
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
@@ -380,6 +381,7 @@ class SessaoSSH:
         self.conectada = True
         self.buffer = ""
         self._entrar_em_enable()
+        self._desativar_paginacao()
 
     def _conectar(self, host, porta, usuario, senha):
         """Conecta discovering o método aceito pela OLT antes de autenticar.
@@ -450,7 +452,22 @@ class SessaoSSH:
             self.sessao.send(senha + "\r")
             saida = self._ler_ate(self._prompt_no_buffer, 10)
         if "#" not in saida:
-            logger.warning("modo privilegiado (enable) nao confirmado")
+            logger.warning("modo privilegiado (enable) nao confirmado: %s",
+                           _resumo(saida))
+
+    def _desativar_paginacao(self):
+        """Desliga a paginação da CLI (evita o prompt `--More--`).
+
+        Sem isso, listagens longas deixam a OLT esperando uma tecla e a
+        leitura expira.
+        """
+        comando = (self.configuracao.get("screen_length") or
+                   "screen-length 0 temporary").strip()
+        if not comando:
+            return
+        self.comandos.append(comando)
+        self.sessao.send(comando + "\r")
+        self._ler_ate(self._prompt_no_buffer, 10)
 
     def executar(self, comando):
         if not self.conectada:
@@ -477,14 +494,28 @@ class SessaoSSH:
             dados = self.sessao.recv(4096)
             if not dados:
                 break
-            saida += dados.decode("utf-8", "replace")
+            texto = dados.decode("utf-8", "replace")
+            if self._solicita_mais(texto):
+                # A CLI paginou a saída e espera uma tecla: envia espaço e
+                # segue lendo.
+                self.sessao.send(" ")
+                continue
+            saida += texto
             if predicado(saida):
                 break
         return saida
 
+    def _solicita_mais(self, texto):
+        """Indica se a saída termina com o prompt de paginação da CLI."""
+        linhas = [linha for linha in texto.splitlines() if linha.strip()]
+        if not linhas:
+            return False
+        ultima = linhas[-1].strip()
+        return "more" in ultima.lower() and ultima.endswith("-")
+
     @property
     def timeout(self):
-        return float(os.environ.get("OLT_TIMEOUT_COMANDO", "30"))
+        return float(os.environ.get("OLT_TIMEOUT_COMANDO", "120"))
 
     def _prompt_no_buffer(self, saida):
         if not saida or not saida.strip():
@@ -1665,6 +1696,16 @@ def portas_configuradas(configuracao):
         else:
             portas.append(int(item))
     return portas
+
+
+def _resumo(texto, tamanho=200):
+    """Resumo curto de uma saída, sem senhas, para diagnóstico."""
+    limpo = (texto or "").strip()
+    limpo = re.sub(r'(password|Password)\s*"[^"]*"', r'\1 "****"', limpo)
+    limpo = re.sub(r"\s+", " ", limpo)
+    if len(limpo) > tamanho:
+        limpo = "..." + limpo[-tamanho:]
+    return limpo
 
 
 def _confirmar(mensagem):
