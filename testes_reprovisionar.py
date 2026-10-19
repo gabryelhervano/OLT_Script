@@ -11,7 +11,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import reprovisionar_olt as script
+import olt as script
+from olt import interacao
+from olt.descoberta import (_consultar_configuracao_atual,
+                          _consultar_perfil_ont)
 
 
 def escrever(path, linhas):
@@ -192,19 +195,19 @@ RESPOSTA_SERVICE_PORT = """   INDEX VLAN VLAN     PORT F/ S/ P VPI  VCI   FLOW  
 
 
 RESPOSTA_RESUMO_ONTS = """  In port 0/1/4, the total of ONTs are: 2, online: 1
-  ------------------------------------------------------------------------------
+  -----------------------------------------------------------------------------
   ONT  Run     Last                Last                Last
   ID   State   UpTime              DownTime            DownCause
-  ------------------------------------------------------------------------------
+  -----------------------------------------------------------------------------
   42   online  2026-10-16 10:51:06 2026-10-16 10:47:01 dying-gasp
   43   offline 2026-10-16 14:40:18 2026-10-17 00:06:43 dying-gasp
-  ------------------------------------------------------------------------------
+  -----------------------------------------------------------------------------
   ONT        SN        Type          Distance Rx/Tx power  Description
   ID                                    (m)      (dBm)
-  ------------------------------------------------------------------------------
+  -----------------------------------------------------------------------------
   42  HWTC0D3BDDA7 HG8145V5         827   -20.55/2.30  joao
   43  HWTC0D3BDDA9 HG8245W5-6T      -     -/-          maria
-  ------------------------------------------------------------------------------
+  -----------------------------------------------------------------------------
 """
 
 
@@ -600,7 +603,7 @@ class TestesFluxo(unittest.TestCase):
         sessao = script.SessaoSimulada()
         sessao.definir_resposta(
             "display current-configuration | include ont", config)
-        atual = script._consultar_configuracao_atual(sessao)
+        atual = _consultar_configuracao_atual(sessao)
         ont = atual["onts"][(4, 9)]
         self.assertEqual(ont["srvprofile"], 100)
         self.assertEqual(ont["lineprofile"], 10)
@@ -617,7 +620,7 @@ class TestesFluxo(unittest.TestCase):
             "  ONT-ID    Line profile name                 Service profile name\n"
             "  -----------------------------------------------\n"
             "       9    LINE-PADRAO                       SRV-PADRAO\n")
-        nomes = script._consultar_perfil_ont(sessao, "0/1", 4, 9)
+        nomes = _consultar_perfil_ont(sessao, "0/1", 4, 9)
         self.assertEqual(nomes["linha"], "LINE-PADRAO")
         self.assertEqual(nomes["srv"], "SRV-PADRAO")
 
@@ -674,13 +677,13 @@ class TestesFluxo(unittest.TestCase):
         }
         indice_por_serial = {"HWTC0D3BDDA7": [registro]}
         indice_por_usuario = {"joao": [registro]}
-        resposta_original = script._confirmar
-        script._confirmar = lambda mensagem: True
+        resposta_original = interacao.confirmar
+        interacao.confirmar = lambda mensagem: True
         try:
             resultados = orquestrador.executar(
                 [registro], indice_por_serial, indice_por_usuario)
         finally:
-            script._confirmar = resposta_original
+            interacao.confirmar = resposta_original
         info = resultados["0/1/4/42"]
         self.assertEqual(info["classe"], script.ESTADO_INCONCLUSIVO)
         self.assertTrue(info["motivo"].startswith("falha na execução"))

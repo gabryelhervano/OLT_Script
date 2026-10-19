@@ -1,15 +1,25 @@
 # Reprovisionamento de ONTs em OLTs Huawei
 
-Script único em Python para automatizar o reprovisionamento de ONTs em OLTs
+Ferramenta em Python para automatizar o reprovisionamento de ONTs em OLTs
 Huawei (modelos MA5800, entre outros), utilizando a CLI do equipamento por
-SSH. A sequência de comandos reproduz é a mesma validada na MA5800 com
-versão V100R021
+SSH. A sequência de comandos reproduzida é a mesma validada na MA5800 com
+versão V100R021.
 
 ## Estrutura do projeto
 
 | Arquivo | Descrição |
 |---|---|
-| `reprovisionar_olt.py` | Script completo: leitura da planilha, consulta SSH, classificação, fluxo e relatório. |
+| `reprovisionar_olt.py` | Linha de comando: opções, modos de execução e saída no terminal. |
+| `olt/configuracao.py` | Carregamento do INI e das variáveis de ambiente. |
+| `olt/planilha.py` | Leitura e validação da planilha de usuários PPPoE. |
+| `olt/classificacao.py` | Associação de cada ONT a um registro da planilha. |
+| `olt/sessao.py` | Sessão SSH com o equipamento (e a versão simulada). |
+| `olt/descoberta.py` | Leitura do estado atual das ONTs. |
+| `olt/comandos.py` | Montagem da sequência de reprovisionamento. |
+| `olt/orquestrador.py` | Condução da execução, card a card. |
+| `olt/relatorio.py` | Registro das execuções e relatório em CSV. |
+| `olt/estados.py` | Estados e padrões compartilhados entre os módulos. |
+| `olt/util.py`, `olt/erros.py`, `olt/interacao.py` | Auxiliares. |
 | `exemplo_simulacao.py` | Executa a simulação com três ONTs ilustrativos (um de cada padrão de CPE). |
 | `testes_reprovisionar.py` | Testes automatizados (sem conexão real). |
 | `config_exemplo.ini` | Exemplo de configuração, sem credenciais reais. |

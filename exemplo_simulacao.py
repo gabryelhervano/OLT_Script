@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import reprovisionar_olt as script
+import olt as script
 
 
 def _resumo_porta(onts):
