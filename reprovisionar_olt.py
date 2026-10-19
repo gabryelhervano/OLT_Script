@@ -373,6 +373,7 @@ class SessaoSSH:
         self.buffer = ""
         self.comandos = []
         self._undo_paginacao = ""
+        self._saida_parcial = ""
 
     def conectar(self):
         host = self.configuracao["host"]
@@ -505,15 +506,44 @@ class SessaoSSH:
                 logger.info("paginacao da CLI desativada (%s)", comando)
                 self._undo_paginacao = _UNDO_PAGINACAO.get(comando, "undo scroll")
                 return
+        # Algumas CLIs só aceitam o comando na visão de configuração.
+        if self._tentar_na_visao_de_configuracao(candidatos):
+            return
         logger.warning(
             "a CLI nao aceitou nenhum comando de desativacao da paginacao "
             "(%s); listagens longas podem expirar", ", ".join(candidatos))
 
+    def _tentar_na_visao_de_configuracao(self, candidatos):
+        """Tenta os comandos dentro de `system-view` e volta ao modo normal."""
+        entrada = self._tentar_comando("system-view", timeout=8)
+        if _comando_desconhecido(entrada) or "[" not in entrada:
+            return False
+        for comando in candidatos:
+            saida = self._tentar_comando(comando)
+            if not _comando_desconhecido(saida):
+                logger.info("paginacao da CLI desativada (%s, em system-view)",
+                            comando)
+                self._undo_paginacao = _UNDO_PAGINACAO.get(
+                    comando, "undo scroll")
+                self._tentar_comando("quit", timeout=8)
+                return True
+        self._tentar_comando("quit", timeout=8)
+        return False
+
     def _tentar_comando(self, comando, timeout=10):
-        """Envia um comando e devolve a resposta crua da CLI."""
+        """Envia um comando e devolve a resposta crua da CLI.
+
+        Algumas CLIs não reimprimem o prompt depois de determinados
+        comandos (o `scroll` desliga a exibição do "Command:"). Nesse
+        caso a espera expira, mas a sessão continua viva: o que já chegou
+        é devolvido para que o comando seja avaliado pelo texto de erro.
+        """
         self.comandos.append(comando)
         self._enviar(comando + self.terminador)
-        return self._ler_ate(self._prompt_no_buffer, timeout)
+        try:
+            return self._ler_ate(self._prompt_no_buffer, timeout)
+        except ErroOperacao:
+            return self._saida_parcial
 
     def executar(self, comando):
         if not self.conectada:
@@ -555,6 +585,7 @@ class SessaoSSH:
                 if predicado("".join(partes)):
                     break
                 if time.monotonic() - inicio > timeout:
+                    self._saida_parcial = "".join(partes)
                     raise ErroOperacao("timeout na execução do comando")
                 continue
             dados = self.sessao.recv(4096)
