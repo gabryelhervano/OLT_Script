@@ -65,6 +65,19 @@ operador.
   executado automaticamente, pois não há procedimento validado para isso.
   O operador deve restaurar manualmente quando necessário.
 
+## Desempenho
+
+- A OLT é a origem da lista de ONTs: a planilha fornece as credenciais. As
+  consultas caras (`display service-port all`, `display current-configuration`)
+  são lidas uma vez por execução e reutilizadas por todas as ONTs.
+- Antes de consultar o estado de uma ONT, a triagem descarta as que não têm
+  correspondência na planilha, comparando o serial e a descrição (que é o
+  usuário PPPoE). Isso evita as consultas de leitura das ONTs fora da
+  campanha. A opção `filtrar_por_planilha = nao` consulta todas.
+- Cada ONT reprovisionada tem seu estado lido três vezes (descoberta,
+  reconferência antes da alteração e validação final), o que protege contra
+  mudanças externas entre as etapas.
+
 ## Segurança de credenciais
 
 - Senhas PPPoE e senhas SSH nunca são gravadas em logs, relatórios ou mensagens
