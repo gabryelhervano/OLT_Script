@@ -396,13 +396,12 @@ class SessaoSSH:
         except paramiko.AuthenticationException as erro:
             logger.info("senha recusada (%s); tentando teclado-interativo",
                         erro)
+        # Fallback: teclado-interativo (a MA5800 apresenta o prompt
+        # "User password:" nesse método, que o paramiko não cobre no
+        # caminho de senha simples).
         transporte = paramiko.Transport((host, porta))
         try:
-            transporte.connect(username=usuario, password=senha)
-        except Exception:
-            transporte.close()
-            raise
-        try:
+            transporte.start_client(timeout=20)
             transporte.auth_interactive(
                 usuario, lambda titulo, instrucoes, perguntas: [
                     senha for _ in perguntas])
