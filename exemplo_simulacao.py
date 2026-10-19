@@ -82,13 +82,47 @@ def _ipconfig(usuario, mac):
 """ % (usuario, mac)
 
 
+RESPOSTA_CONFIG_ATUAL = """ ont-srvprofile gpon profile-id 100 profile-name "SRV-PADRAO"
+ ont-lineprofile gpon profile-id 10 profile-name "LINE-PADRAO"
+ ont add 4 42 sn-auth "HWTC0D3BDDA7" omci ont-lineprofile-id 10 ont-srvprofile-id 100 desc "joao"
+ ont ipconfig 4 42 pppoe vlan 2551 priority 5 user-account username "joao" password "********"
+ ont port native-vlan 4 42 eth 1 vlan 2551 priority 0
+ ont tr069-server-config 4 42 profile-id 1
+ ont internet-config 4 42 ip-index 0
+ ont wan-config 4 42 ip-index 0 profile-id 10
+ ont add 5 43 sn-auth "HWTC0D3BDDA9" omci ont-lineprofile-id 10 ont-srvprofile-id 100 desc "maria"
+ ont tr069-server-config 5 43 profile-id 1
+ ont internet-config 5 43 ip-index 0
+ ont wan-config 5 43 ip-index 0 profile-id 10
+"""
+
+
+RESPOSTA_PERFIL_ONT = """  ONT-ID    Line profile name                 Service profile name
+  -----------------------------------------------------------------------------
+      42    LINE-PADRAO                       SRV-PADRAO
+"""
+
+
+RESPOSTA_PERFIL_ONT_43 = """  ONT-ID    Line profile name                 Service profile name
+  -----------------------------------------------------------------------------
+      43    LINE-PADRAO                       SRV-PADRAO
+"""
+
+
 RESPOSTA_SERVICE_PORT = (
-    "Service-port 796 vlan 2551 gpon 0/1/4 ont 42 gemport 37 "
-    "multi-service user-vlan 2551 tag-transform translate\n"
-    "Service-port 797 vlan 2551 gpon 0/1/5 ont 43 gemport 38 "
-    "multi-service user-vlan 2551 tag-transform translate\n"
-    "Service-port 798 vlan 2551 gpon 0/1/6 ont 44 gemport 39 "
-    "multi-service user-vlan 2551 tag-transform translate"
+    "   INDEX VLAN VLAN     PORT F/ S/ P VPI  VCI   FLOW  FLOW       RX   TX"
+    "   STATE\n"
+    "         ID   ATTR     TYPE                    TYPE  PARA\n"
+    "  ------------------------------------------------------------------------"
+    "-----\n"
+    "     796 2551 common   gpon 0/1 /4  42   37    vlan  2551       -    -"
+    "    up\n"
+    "     797 2551 common   gpon 0/1 /5  43   38    vlan  2551       -    -"
+    "    up\n"
+    "     798 2551 common   gpon 0/1 /6  44   39    vlan  2551       -    -"
+    "    up\n"
+    "  ------------------------------------------------------------------------"
+    "-----\n"
 )
 
 
@@ -114,6 +148,12 @@ def criar_transporte():
         "display ont ipconfig 6 44", _ipconfig("", "00:11:22:33:44:77"))
     transporte.definir_resposta(
         "display service-port all", RESPOSTA_SERVICE_PORT)
+    transporte.definir_resposta(
+        "display current-configuration | include ont", RESPOSTA_CONFIG_ATUAL)
+    transporte.definir_resposta(
+        "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+    transporte.definir_resposta(
+        "display ont profile 0 1 5 43", RESPOSTA_PERFIL_ONT_43)
     return transporte
 
 

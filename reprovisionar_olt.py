@@ -648,7 +648,7 @@ def comando_criar_service_port(configuracao):
             caminho_gpon,
             configuracao["ont_id"],
             int(configuracao["gemport"]),
-            _vlan(configuracao),
+            _validar_vlan(configuracao["user_vlan"]),
         )
     )
 
@@ -722,43 +722,147 @@ ESTADO_INCONCLUSIVO = "INCONCLUSIVO"
 ETAPA_VALIDACAO = "validacao"
 
 
-def _consultar_servicos(sessao, ont_id):
-    """Lista os service-ports atuais; devolve ID, gemport e user-vlan."""
-    saida = sessao.executar("display service-port all")
-    servicos = {}
-    atual = None
+_PADRAO_SRVPROFILE = re.compile(
+    r"ont-srvprofile\s+gpon\s+profile-id\s+(?P<id>\d+)\s+"
+    r"profile-name\s+\"(?P<nome>[^\"]+)\"")
+_PADRAO_LINEPROFILE = re.compile(
+    r"ont-lineprofile\s+gpon\s+profile-id\s+(?P<id>\d+)\s+"
+    r"profile-name\s+\"(?P<nome>[^\"]+)\"")
+_PADRAO_ONT_ADD = re.compile(
+    r"ont\s+add\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b.*?"
+    r"ont-lineprofile-id\s+(?P<lineprofile>\d+)")
+_PADRAO_ONT_SRVPROFILE = re.compile(
+    r"ont\s+add\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b.*?"
+    r"ont-srvprofile-id\s+(?P<srvprofile>\d+)")
+_PADRAO_ONT_DESC = re.compile(
+    r"ont\s+add\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b.*?"
+    r"desc\s+\"(?P<descricao>[^\"]*)\"")
+_PADRAO_ONT_TR069 = re.compile(
+    r"ont\s+tr069-server-config\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b.*?"
+    r"profile-id\s+(?P<profile>\d+)")
+_PADRAO_ONT_INTERNET = re.compile(
+    r"ont\s+internet-config\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b")
+_PADRAO_ONT_WAN = re.compile(
+    r"ont\s+wan-config\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b.*?"
+    r"profile-id\s+(?P<profile>\d+)")
+
+
+def _consultar_configuracao_atual(sessao):
+    """Lê a configuração corrente da OLT (somente leitura) e indexa as ONTs.
+
+    Traz o que os `display ont ...` não expõem: os identificadores dos
+    perfis (serviço, TR-069 e WAN) e quais configurações opcionais existem
+    para cada ONT. A senha PPPoE que aparece no arquivo é ignorada e nunca
+    é gravada em relatório, log ou saída.
+    """
+    saida = sessao.executar("display current-configuration | include ont")
+    perfis = {"srv": {}, "linha": {}}
+    onts = {}
     for linha in saida.splitlines():
-        linha = linha.strip()
-        if not linha:
+        achado = _PADRAO_SRVPROFILE.search(linha)
+        if achado:
+            perfis["srv"][achado.group("nome")] = int(achado.group("id"))
             continue
+        achado = _PADRAO_LINEPROFILE.search(linha)
+        if achado:
+            perfis["linha"][achado.group("nome")] = int(achado.group("id"))
+            continue
+        achado = _PADRAO_ONT_ADD.search(linha)
+        if achado:
+            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
+            dados_ont = onts.setdefault(chave, {})
+            dados_ont["lineprofile"] = int(achado.group("lineprofile"))
+            srvprofile = _PADRAO_ONT_SRVPROFILE.search(linha)
+            if srvprofile:
+                dados_ont["srvprofile"] = int(srvprofile.group("srvprofile"))
+            descricao = _PADRAO_ONT_DESC.search(linha)
+            if descricao:
+                dados_ont["descricao"] = descricao.group("descricao")
+            continue
+        achado = _PADRAO_ONT_TR069.search(linha)
+        if achado:
+            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
+            onts.setdefault(chave, {})["tr069profile"] = int(
+                achado.group("profile"))
+            onts[chave]["tr069"] = True
+            continue
+        achado = _PADRAO_ONT_INTERNET.search(linha)
+        if achado:
+            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
+            onts.setdefault(chave, {})["internet"] = True
+            continue
+        achado = _PADRAO_ONT_WAN.search(linha)
+        if achado:
+            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
+            onts.setdefault(chave, {})["wanprofile"] = int(
+                achado.group("profile"))
+            onts[chave]["wan"] = True
+            continue
+    return {"perfis": perfis, "onts": onts}
+
+
+_PADRAO_SERVICE_PORT = re.compile(
+    r"^\s*(?P<index>\d+)\s+(?P<vlan>\d+)\s+(?P<attr>\S+)\s+"
+    r"gpon\s+(?P<frame>\d+/\d+)\s*/(?P<porta>\d+)\s+"
+    r"(?P<vpi>\d+)\s+(?P<vci>\d+)\s+(?P<fluxo>\S+)\s+(?P<param>\S+)"
+)
+
+
+def _consultar_ipconfig(sessao, interface, porta, ont_id):
+    """Lê o ipconfig da ONT.
+
+    Na MA5800 o comando só existe na visão `interface gpon`; a sessão volta
+    à configuração raiz ao final (`quit`).
+    """
+    sessao.executar("interface gpon %s" % interface)
+    saida = sessao.executar(
+        "display ont ipconfig %d %d" % (porta, ont_id))
+    sessao.executar("quit")
+    return saida
+
+
+def _consultar_perfil_ont(sessao, interface, porta, ont_id):
+    """Lê o nome dos perfis aplicados à ONT (`display ont profile`)."""
+    saida = sessao.executar(
+        "display ont profile %s %d %d" % (interface, porta, ont_id))
+    for linha in saida.splitlines():
         partes = linha.split()
-        if len(partes) < 2:
+        if len(partes) < 3 or not partes[0].isdigit():
             continue
-        if partes[0].lower().startswith("display") or \
-                partes[0].lower().startswith("service-port"):
-            try:
-                atual = int(partes[1])
-            except ValueError:
-                atual = None
-            if atual is not None:
-                servicos.setdefault(atual, {})
-                servicos[atual]["id"] = atual
-        if atual is None:
+        if int(partes[0]) != ont_id:
             continue
-        for indice, parte in enumerate(partes):
-            if indice == 0 or indice + 1 >= len(partes):
-                continue
-            if parte.startswith("gemport"):
-                servicos[atual]["gemport"] = partes[indice + 1]
-            if parte.startswith("user-vlan"):
-                servicos[atual]["user-vlan"] = partes[indice + 1]
-            if parte == "ont":
-                try:
-                    identificado = int(partes[indice + 1])
-                except ValueError:
-                    continue
-                if identificado == ont_id:
-                    servicos[atual]["ont_id"] = identificado
+        return {"linha": partes[1], "srv": partes[2]}
+    return {}
+
+
+def _consultar_servicos(sessao, interface, porta, ont_id):
+    """Lista os service-ports da ONT; devolve ID, gemport e user-vlan.
+
+    A listagem `display service-port all` é uma tabela "Switch-Oriented
+    Flow List": o índice é o identificador do service-port, F/S/P indica a
+    porta GPON, VPI é o identificador da ONT e VCI é o gemport.
+    """
+    saida = sessao.executar("display service-port all")
+    alvo = "%s/%d" % (interface, porta)
+    servicos = []
+    for linha in saida.splitlines():
+        encontrado = _PADRAO_SERVICE_PORT.match(linha)
+        if not encontrado:
+            continue
+        valores = encontrado.groupdict()
+        caminho = "%s/%s" % (valores["frame"], valores["porta"])
+        if caminho != alvo:
+            continue
+        if int(valores["vpi"]) != ont_id:
+            continue
+        servicos.append({
+            "id": int(valores["index"]),
+            "vlan": valores["vlan"],
+            "gpon": caminho,
+            "ont_id": int(valores["vpi"]),
+            "gemport": valores["vci"],
+            "user-vlan": valores["param"],
+        })
     return servicos
 
 
@@ -771,7 +875,7 @@ def _campo(campos, *chaves):
     return None
 
 
-def capturar_estado(sessao, interface, porta, ont_id):
+def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
     """Registra o estado atual da ONT, sem executar nenhum comando de alteração.
 
     Todos os demais valores são descobertos na resposta dos comandos de
@@ -780,35 +884,52 @@ def capturar_estado(sessao, interface, porta, ont_id):
     """
     wan_info = sessao.executar(
         "display ont wan-info %s %d %d" % (interface, porta, ont_id))
-    ipconfig = sessao.executar(
-        "display ont ipconfig %d %d" % (porta, ont_id))
-    servicos = _consultar_servicos(sessao, ont_id)
-    servico = None
-    for identificador, valores in servicos.items():
-        if valores.get("ont_id") == ont_id:
-            servico = valores
+    ipconfig = _consultar_ipconfig(sessao, interface, porta, ont_id)
+    servicos = _consultar_servicos(
+        sessao, interface, porta, ont_id)
+    servico = servicos[0] if servicos else None
     campos_wan = _campos(wan_info)
     campos_ip = _campos(ipconfig)
-    vlane = _campo(campos_ip, "Manage VLAN", "ONT manage VLAN")
+    vlane = _campo(campos_ip, "ONT manage VLAN", "Manage VLAN")
     if not vlane:
         vlane = _campo(campos_wan, "Manage VLAN", "ONT manage VLAN")
     if not vlane:
         raise ErroOperacao("VLAN atual não identificada")
+
+    atual = (config_atual or {}).get("onts", {}).get((porta, ont_id))
+    if atual is None:
+        # A ONT não apareceu na configuração corrente: adota-se a sequência
+        # validada (TR-069, internet e WAN) e os perfis precisam ser
+        # descobertos; se não forem, a ONT fica bloqueada.
+        atual = {"tr069": True, "internet": True, "wan": True}
+    perfis = (config_atual or {}).get("perfis", {})
+    nomes = _consultar_perfil_ont(sessao, interface, porta, ont_id)
+
+    srvprofile = atual.get("srvprofile")
+    if srvprofile is None and nomes.get("srv"):
+        srvprofile = perfis.get("srv", {}).get(nomes["srv"])
+    tr069profile = atual.get("tr069profile")
+    if tr069profile is None and nomes.get("linha"):
+        tr069profile = perfis.get("linha", {}).get(nomes["linha"])
+    wanprofile = atual.get("wanprofile")
+
     return {
         "usuario": _campo(campos_ip, "PPPoE username", "Username"),
         "vlane": vlane,
         "prioridade": _campo(
-            campos_ip, "Manage priority", "ONT manage priority"),
+            campos_ip, "ONT manage priority", "Manage priority"),
         "configuracao": _campo(campos_ip, "ONT config type", "Config type"),
-        "srvprofile": _campo(campos_wan, "srvprofile", "Service profile ID",
-                              "ONT service profile ID"),
-        "tr069profile": _campo(campos_wan, "tr069profile",
-                               "TR-069 profile ID", "TR069 profile ID"),
-        "wanprofile": _campo(campos_wan, "wanprofile", "WAN profile ID"),
+        "lineprofile_atual": atual.get("lineprofile"),
+        "srvprofile": srvprofile,
+        "tr069profile": tr069profile,
+        "wanprofile": wanprofile,
+        "tr069": bool(atual.get("tr069")),
+        "internet": bool(atual.get("internet")),
+        "wan_config": bool(atual.get("wan")),
         "gemport": (servico or {}).get("gemport"),
         "user_vlan": (servico or {}).get("user-vlan") or vlane,
         "service_port": (servico or {}).get("id"),
-        "wan": _campo(campos_wan, "Service type"),
+        "tipo_wan": _campo(campos_wan, "Service type"),
         "status_conexao": _campo(campos_wan, "IPv4 Connection status"),
         "mac": _campo(campos_ip, "MAC address", "ONT MAC") or
         _campo(campos_wan, "MAC address", "ONT MAC"),
@@ -833,9 +954,12 @@ def montar_passos(interface, configuracao, estado_original):
     passos.append(comando_criar_ont(configuracao))
     passos.append(comando_configurar_pppoe(configuracao))
     passos.append(comando_native_vlan(configuracao))
-    passos.append(comando_configurar_tr069(configuracao))
-    passos.append(comando_configurar_internet(configuracao))
-    passos.append(comando_configurar_wan(configuracao))
+    if configuracao.get("tr069"):
+        passos.append(comando_configurar_tr069(configuracao))
+    if configuracao.get("internet"):
+        passos.append(comando_configurar_internet(configuracao))
+    if configuracao.get("wan_config"):
+        passos.append(comando_configurar_wan(configuracao))
     passos.append(comando_sair_interface())
     passos.append(comando_criar_service_port(configuracao))
     passos.append(comando_exibir_wan_info(interface, porta, ont_id))
@@ -854,7 +978,7 @@ def validar_estado_final(configuracao, estado):
         return ESTADO_PARCIAL, "prioridade incorreta"
     if estado["configuracao"] != "PPPoE":
         return ESTADO_PARCIAL, "configuração PPPoE incorreta"
-    if estado["wan"] == "":
+    if estado["tipo_wan"] == "":
         return ESTADO_PARCIAL, "configuração WAN ausente"
     if estado["status_conexao"] != "Connected":
         return ESTADO_PARCIAL, "conexão não estabilizada"
@@ -1000,6 +1124,7 @@ class Orquestrador:
         self.controle = None
         self.resultados = {}
         self.processados = set()
+        self._config_atual = None
         self.registro = carregar_registro(caminho_registro)
         self.concluidos = set()
         for identificador, info in self.registro.items():
@@ -1044,7 +1169,7 @@ class Orquestrador:
             try:
                 estado_atual = capturar_estado(
                     self.sessao, dados["interface"], dados["porta"],
-                    dados["ont_id"])
+                    dados["ont_id"], self._configuracao_atual())
             except ErroOperacao as erro:
                 # Uma ONT ilegível não interrompe as demais do card.
                 self.resultados[identificador] = {
@@ -1054,7 +1179,8 @@ class Orquestrador:
                 continue
             for campo in ("vlane", "prioridade", "srvprofile",
                          "tr069profile", "wanprofile", "gemport",
-                         "service_port"):
+                         "user_vlan", "service_port", "tr069", "internet",
+                         "wan_config"):
                 if campo in estado_atual:
                     dados[campo] = estado_atual[campo]
             resultado = self._classificar(
@@ -1084,6 +1210,21 @@ class Orquestrador:
         if not _confirmar("Executar alterações neste card?"):
             return False
         return True
+
+    def _configuracao_atual(self):
+        """Configuração corrente da OLT, lida uma única vez por execução.
+
+        Traz os identificadores dos perfis e quais configurações opcionais
+        existem para cada ONT. A senha PPPoE presente no arquivo é ignorada
+        e nunca é gravada em relatório, log ou saída.
+        """
+        if self._config_atual is None:
+            try:
+                self._config_atual = _consultar_configuracao_atual(self.sessao)
+            except ErroOperacao as erro:
+                logger.error("leitura da configuração corrente falhou: %s", erro)
+                self._config_atual = {"perfis": {}, "onts": {}}
+        return self._config_atual
 
     def _listar_onts(self):
         try:
@@ -1204,17 +1345,25 @@ class Orquestrador:
             "vlan": dados["vlane"],
             "prioridade": dados["prioridade"],
             "srvprofile": dados["srvprofile"],
-            "tr069profile": dados["tr069profile"],
-            "wanprofile": dados["wanprofile"],
+            "tr069profile": dados.get("tr069profile"),
+            "wanprofile": dados.get("wanprofile"),
+            "tr069": dados.get("tr069", False),
+            "internet": dados.get("internet", False),
+            "wan_config": dados.get("wan_config", False),
             "usuario": dados["usuario"],
             "senha": dados["senha"],
             "gemport": dados["gemport"],
+            "user_vlan": dados.get("user_vlan") or dados["vlane"],
         }
-        for campo in ("vlan", "prioridade", "srvprofile",
-                     "tr069profile", "wanprofile", "gemport"):
+        for campo in ("vlan", "prioridade", "srvprofile", "gemport",
+                     "user_vlan"):
             if not configuracao[campo]:
                 raise ErroOperacao(
                     "valor atual não identificado: %s" % campo)
+        if configuracao["tr069"] and not configuracao.get("tr069profile"):
+            raise ErroOperacao("valor atual não identificado: tr069profile")
+        if configuracao["wan_config"] and not configuracao.get("wanprofile"):
+            raise ErroOperacao("valor atual não identificado: wanprofile")
         return configuracao
 
     def _montar_passos(self, dados):
@@ -1232,10 +1381,10 @@ class Orquestrador:
         O valor é usado apenas no `undo service-port`; nenhum identificador
         novo é enviado no comando de criação.
         """
-        servicos = _consultar_servicos(self.sessao, ont_id)
-        for identificador, valores in servicos.items():
-            if valores.get("ont_id") == ont_id:
-                return valores.get("id")
+        servicos = _consultar_servicos(
+            self.sessao, interface, porta, ont_id)
+        if servicos:
+            return servicos[0]["id"]
         return None
 
     def _ja_estava_configurado(self, configuracao, estado_atual):

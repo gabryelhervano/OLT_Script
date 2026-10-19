@@ -161,6 +161,36 @@ class TestesClassificacao(unittest.TestCase):
         self.assertEqual(resultado["classe"], script.IGNORADA_SEM_IDENTIFICADORES)
 
 
+RESPOSTA_CONFIG_ATUAL = """ ont-srvprofile gpon profile-id 100 profile-name "SRV-PADRAO"
+ ont-lineprofile gpon profile-id 10 profile-name "LINE-PADRAO"
+ ont add 4 42 sn-auth "HWTC0D3BDDA7" omci ont-lineprofile-id 10 ont-srvprofile-id 100 desc "joao"
+ ont ipconfig 4 42 pppoe vlan 2551 priority 5 user-account username "joao" password "********"
+ ont port native-vlan 4 42 eth 1 vlan 2551 priority 0
+ ont tr069-server-config 4 42 profile-id 1
+ ont internet-config 4 42 ip-index 0
+ ont wan-config 4 42 ip-index 0 profile-id 10
+ ont add 4 43 sn-auth "HWTC0D3BDDA9" omci ont-lineprofile-id 10 ont-srvprofile-id 100 desc "maria"
+ ont tr069-server-config 4 43 profile-id 1
+ ont internet-config 4 43 ip-index 0
+ ont wan-config 4 43 ip-index 0 profile-id 10
+"""
+
+
+RESPOSTA_PERFIL_ONT = """  ONT-ID    Line profile name                 Service profile name
+  -----------------------------------------------------------------------------
+      42    LINE-PADRAO                       SRV-PADRAO
+"""
+
+
+RESPOSTA_SERVICE_PORT = """   INDEX VLAN VLAN     PORT F/ S/ P VPI  VCI   FLOW  FLOW       RX   TX   STATE
+         ID   ATTR     TYPE                    TYPE  PARA
+  -----------------------------------------------------------------------------
+     796 2551 common   gpon 0/1 /4  42   37    vlan  2551       -    -    up
+     797 2551 common   gpon 0/1 /4  43   38    vlan  2551       -    -    up
+  -----------------------------------------------------------------------------
+"""
+
+
 RESPOSTA_RESUMO_ONTS = """  In port 0/1/4, the total of ONTs are: 2, online: 1
   ------------------------------------------------------------------------------
   ONT  Run     Last                Last                Last
@@ -184,9 +214,11 @@ class TestesFluxo(unittest.TestCase):
         self.sessao.definir_resposta(
             "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
         self.sessao.definir_resposta(
-            "display service-port all",
-            "Service-port 796 vlan 2551 gpon 0/1/4 ont 42 gemport 37 "
-            "multi-service user-vlan 2551 tag-transform translate")
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        self.sessao.definir_resposta(
+            "display current-configuration | include ont", RESPOSTA_CONFIG_ATUAL)
+        self.sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
         self.sessao.definir_resposta(
             "display ont wan-info 0/1 4 42",
             "  srvprofile: 100\n"
@@ -236,6 +268,7 @@ class TestesFluxo(unittest.TestCase):
             "usuario": "joao",
             "senha": "000123",
             "gemport": 37,
+            "user_vlan": 2551,
         }
 
     def por_serial(self):
@@ -424,9 +457,11 @@ class TestesFluxo(unittest.TestCase):
         sessao.definir_resposta(
             "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
         sessao.definir_resposta(
-            "display service-port all",
-            "Service-port 796 vlan 2551 gpon 0/1/4 ont 42 gemport 37 "
-            "multi-service user-vlan 2551 tag-transform translate")
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont", RESPOSTA_CONFIG_ATUAL)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
         sessao.definir_resposta(
             "display ont wan-info 0/1 4 42",
             "  srvprofile: 100\n  tr069profile: 1\n  wanprofile: 10\n"
@@ -474,15 +509,18 @@ class TestesFluxo(unittest.TestCase):
             resultados["0/1/4/42"]["classe"], script.PADRAO_1_COMPLETA)
 
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
-        # Falta o srvprofile na resposta das consultas: nada pode ser assumido,
-        # então a ONT fica INCONCLUSIVO sem executar nenhum comando.
+        # Nem a configuração corrente nem o `display ont profile` revelam o
+        # srvprofile: nada pode ser assumido, então a ONT fica INCONCLUSIVO
+        # sem executar nenhum comando.
         sessao = script.SessaoSimulada()
         sessao.definir_resposta(
             "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
         sessao.definir_resposta(
-            "display service-port all",
-            "Service-port 796 vlan 2551 gpon 0/1/4 ont 42 gemport 37 "
-            "multi-service user-vlan 2551 tag-transform translate")
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont", "")
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", "")
         sessao.definir_resposta(
             "display ont wan-info 0/1 4 42",
             "  tr069profile: 1\n  wanprofile: 10\n"
