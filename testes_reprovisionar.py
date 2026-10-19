@@ -211,6 +211,32 @@ RESPOSTA_RESUMO_ONTS = """  In port 0/1/4, the total of ONTs are: 2, online: 1
 """
 
 
+RESPOSTA_RESUMO_DOIS_ONTS = """  In port 0/1/4, the total of ONTs are: 2, online: 2
+  ------------------------------------------------------------------------------
+  ONT  Run     Last                Last                Last
+  ID   State   UpTime              DownTime            DownCause
+  ------------------------------------------------------------------------------
+  42   online  2026-10-16 10:51:06 2026-10-16 10:47:01 dying-gasp
+  43   online  2026-10-16 10:51:06 2026-10-16 10:47:01 dying-gasp
+  ------------------------------------------------------------------------------
+  ONT        SN        Type          Distance Rx/Tx power  Description
+  ID                                    (m)      (dBm)
+  ------------------------------------------------------------------------------
+  42  HWTC0D3BDDA7 HG8145V5         827   -20.55/2.30  joao
+  43  HWTC0D3BDDA9 HG8245W5-6T      837   -20.41/2.30  semusuario
+  ------------------------------------------------------------------------------
+"""
+
+
+RESPOSTA_SERVICE_PORT_DOIS_ONTS = """   INDEX VLAN VLAN     PORT F/ S/ P VPI  VCI   FLOW  FLOW       RX   TX   STATE
+         ID   ATTR     TYPE                    TYPE  PARA
+  ---------------------------------------------------------------------------
+     796 2551 common   gpon 0/1 /4  42   37    vlan  2551       -    -    up
+     797 2551 common   gpon 0/1 /4  43   38    vlan  2551       -    -    up
+  ---------------------------------------------------------------------------
+"""
+
+
 class TestesSessao(unittest.TestCase):
     def test_deteccao_de_prompt(self):
         sessao = script.SessaoSSH({})
@@ -640,6 +666,90 @@ class TestesFluxo(unittest.TestCase):
         nomes = _consultar_perfil_ont(sessao, "0/1", 4, 9)
         self.assertEqual(nomes["linha"], "LINE-PADRAO")
         self.assertEqual(nomes["srv"], "SRV-PADRAO")
+
+    def test_ont_sem_correspondencia_nao_e_reprovisionada(self):
+        # A ONT 43 não tem correspondência com a planilha (padrão 3). Mesmo
+        # tendo service-port, ela não pode ser reprovisionada: o usuário e a
+        # senha chegariam vazios.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_DOIS_ONTS)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT_DOIS_ONTS)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            RESPOSTA_CONFIG_ATUAL)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  MAC address : AC8D-34D9-BD67\n"
+            "  Service type : Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 43",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 43",
+            "  PPPoE username :\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "maximo": 5,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=True,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resposta_original = interacao.confirmar
+        interacao.confirmar = lambda mensagem: True
+        try:
+            resultados = orquestrador.executar(
+                [registro], indice_por_serial, indice_por_usuario)
+        finally:
+            interacao.confirmar = resposta_original
+        self.assertEqual(
+            resultados["0/1/4/43"]["classe"],
+            script.IGNORADA_SEM_IDENTIFICADORES)
+        alteracoes = [comando for comando in sessao.comandos
+                      if comando.startswith(("undo", "ont delete", "ont add",
+                                             "ont ipconfig", "service-port v"))]
+        # Nenhum comando de alteração para a ONT 43.
+        self.assertEqual([c for c in alteracoes if " 43" in c], [])
+        # A ONT 42, compatível, foi reprovisionada por completo.
+        self.assertTrue([c for c in alteracoes if " 42" in c])
 
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o

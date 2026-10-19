@@ -238,6 +238,11 @@ class Orquestrador:
         if identificador in self.concluidos or \
                 identificador in self.processados:
             return
+        if self._classe(identificador) not in (
+                PADRAO_1_COMPLETA, PADRAO_2_SERIAL, PADRAO_2_PPPOE):
+            # A ONT não tem correspondência com a planilha (padrão 3,
+            # divergência ou ambiguidade): não há o que reprovisionar.
+            return
         if not self.controle.verificar_limite(self.controle.processados):
             return
         _checar_tempo(self.controle)
@@ -254,6 +259,10 @@ class Orquestrador:
                 "classe": ESTADO_INCONCLUSIVO,
                 "motivo": "falha na execução: %s" % erro,
             }
+
+    def _classe(self, identificador):
+        """Classe atribuída à ONT na fase de classificação."""
+        return self.resultados.get(identificador, {}).get("classe")
 
     def _executar(self, dados):
         configuracao = self._montar_configuracao(dados)
