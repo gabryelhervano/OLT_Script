@@ -537,29 +537,40 @@ class SessaoSSH:
         Na MA5800 o comando é `config` (na VRP padrão, `system-view`).
         """
         for comando in ("config", "system-view"):
-            saida = self._tentar_comando(comando, timeout=10)
-            if "[" in saida and not _comando_desconhecido(saida):
+            saida = self._tentar_comando(comando, timeout=15)
+            # A MA5800 usa "(config)"; a VRP padrão usa "[~Nome]".
+            if ("(" in saida or "[" in saida) and \
+                    not _comando_desconhecido(saida):
                 logger.info("visao de configuracao ativa (%s)", comando)
                 return True
         logger.warning("nao foi possivel entrar na visao de configuracao")
         return False
 
-    def _tentar_comando(self, comando, timeout=20, enter_extra=False):
+    def _enviar_comando(self, comando, enter_extra=True):
+        """Envia um comando à CLI, com um Enter adicional.
+
+        Na MA5800 cada comando precisa de um Enter a mais para ser
+        concluído: sem ele a linha fica pendente e o próximo comando se
+        junta a ela ("display version display ont ..."). Antes de enviar,
+        a sessão é aguardada ficar ociosa, para não perder caracteres
+        enquanto a OLT ainda processa o comando anterior.
+        """
+        self._aguardar_ociosa(espera_max=5, silencio=0.3)
+        self.comandos.append(comando)
+        self._enviar(comando + self.terminador)
+        if enter_extra:
+            self._enviar(self.terminador)
+
+    def _tentar_comando(self, comando, timeout=20, enter_extra=True):
         """Envia um comando e devolve a resposta crua da CLI.
 
         Algumas CLIs não reimprimem o prompt depois de determinados
         comandos (o `scroll` desliga a exibição do "Command:"). Nesse
         caso a espera expira, mas a sessão continua viva: o que já chegou
         é devolvido e a CLI é aguardada ficar ociosa antes do próximo
-        comando (sem isso o texto se junta ao comando anterior).
-
-        `enter_extra` envia um Enter adicional depois do comando: o
-        `scroll` da MA5800 só é concluído com esse Enter.
+        comando.
         """
-        self.comandos.append(comando)
-        self._enviar(comando + self.terminador)
-        if enter_extra:
-            self._enviar(self.terminador)
+        self._enviar_comando(comando, enter_extra=enter_extra)
         try:
             return self._ler_ate(self._prompt_no_buffer, timeout)
         except ErroOperacao:
@@ -591,11 +602,7 @@ class SessaoSSH:
         comando = comando.strip()
         if not comando:
             return ""
-        # Garante que a CLI terminou o comando anterior antes de enviar o
-        # próximo (sem isso o texto se junta ao comando em andamento).
-        self._aguardar_ociosa(espera_max=3, silencio=0.3)
-        self.comandos.append(comando)
-        self._enviar(comando + self.terminador)
+        self._enviar_comando(comando)
         return self._ler_ate(self._prompt_no_buffer, self.timeout)
 
     def _enviar(self, texto):
