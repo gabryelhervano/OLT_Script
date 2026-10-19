@@ -61,7 +61,7 @@ _PADROES_CONFIG = {
     "chave": ("OLT_CHAVE", ""),
     "senha_enable": ("OLT_SENHA_ENABLE", ""),
     "enable": ("OLT_ENABLE", "enable"),
-    "screen_length": ("OLT_SCREEN_LENGTH", "screen-length 0 temporary"),
+    "screen_length": ("OLT_SCREEN_LENGTH", "auto"),
     "banner": ("OLT_BANNER", "SSH-2.0-OpenSSH_8.9p1"),
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
@@ -456,18 +456,30 @@ class SessaoSSH:
                            _resumo(saida))
 
     def _desativar_paginacao(self):
-        """Desliga a paginação da CLI (evita o prompt `--More--`).
+        """Tenta desligar a paginação da CLI (evita o prompt `--More--`).
 
-        Sem isso, listagens longas deixam a OLT esperando uma tecla e a
-        leitura expira.
+        O comando varia entre firmwares da VRP, então as variantes são
+        testadas uma a uma. Se nenhuma for aceita, o fluxo continua: a
+        leitura tem uma rede de segurança que envia espaço quando a CLI
+        pagina.
         """
-        comando = (self.configuracao.get("screen_length") or
-                   "screen-length 0 temporary").strip()
-        if not comando:
+        configurado = (self.configuracao.get("screen_length") or
+                       "auto").strip().lower()
+        if configurado in ("none", "off", "nao", "não"):
             return
-        self.comandos.append(comando)
-        self.sessao.send(comando + "\r")
-        self._ler_ate(self._prompt_no_buffer, 10)
+        candidatos = []
+        if configurado not in ("auto", ""):
+            candidatos.append(configurado)
+        candidatos.extend(["screen-length 0 temporary", "screen-length disable"])
+        for comando in candidatos:
+            self.comandos.append(comando)
+            self.sessao.send(comando + "\r")
+            saida = self._ler_ate(self._prompt_no_buffer, 10)
+            if not _comando_desconhecido(saida):
+                logger.info("paginacao da CLI desativada (%s)", comando)
+                return
+        logger.info("a CLI nao aceitou screen-length; a leitura seguira "
+                    "automatica mesmo com paginacao")
 
     def executar(self, comando):
         if not self.conectada:
@@ -1696,6 +1708,14 @@ def portas_configuradas(configuracao):
         else:
             portas.append(int(item))
     return portas
+
+
+def _comando_desconhecido(saida):
+    """Indica se a OLT recusou o comando enviado."""
+    texto = (saida or "").lower()
+    return any(marca in texto for marca in (
+        "unknown command", "unrecognized command", "incomplete command",
+        "wrong parameter", "parameter error", "too many parameters"))
 
 
 def _resumo(texto, tamanho=200):
