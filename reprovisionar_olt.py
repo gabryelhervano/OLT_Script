@@ -368,6 +368,7 @@ class SessaoSSH:
         self.configuracao = configuracao
         self.conectada = False
         self.buffer = ""
+        self.comandos = []
 
     def conectar(self):
         host = self.configuracao["host"]
@@ -437,6 +438,7 @@ class SessaoSSH:
             return
         senha = (self.configuracao.get("senha_enable") or
                  self.configuracao.get("senha") or "")
+        self.comandos.append(comando)
         self.sessao.send(comando + "\r")
         saida = self._ler_ate(
             lambda texto: "password" in texto.lower() or
@@ -456,6 +458,7 @@ class SessaoSSH:
         comando = comando.strip()
         if not comando:
             return ""
+        self.comandos.append(comando)
         self.sessao.send(comando + "\r")
         return self._ler_ate(self._prompt_no_buffer, self.timeout)
 
@@ -575,10 +578,12 @@ def _parse_resumo_onts(saida, interface, porta):
     return onts
 
 
-def listar_onts(sessao, interface, portas):
+def listar_onts(sessao, interface, portas, alvo=None):
     """Lista as ONTs presentes na OLT; retorna dicionários por ID da ONT.
 
     A leitura é feita porta a porta com `display ont info summary <fsp>`.
+    Quando `alvo` indica uma ONT específica (serial ou ID), a varredura
+    para assim que ela é encontrada, aliviando a OLT de consultas extras.
     """
     onts = {}
     for porta in portas:
@@ -586,7 +591,20 @@ def listar_onts(sessao, interface, portas):
             "display ont info summary %s/%d" % (interface, porta))
         for ont in _parse_resumo_onts(saida, interface, porta):
             onts[ont["ont_id"]] = ont
+        if alvo and _alvo_encontrado(onts, alvo):
+            break
     return onts
+
+
+def _alvo_encontrado(onts, alvo):
+    if alvo.get("serial"):
+        for ont in onts.values():
+            if (ont.get("Serial") or "") == alvo["serial"]:
+                return True
+        return False
+    if alvo.get("ont_id") is not None:
+        return alvo["ont_id"] in onts
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -1357,7 +1375,8 @@ class Orquestrador:
     def _listar_onts(self):
         try:
             onts = listar_onts(
-                self.sessao, self.configuracao["interface"], self._portas())
+                self.sessao, self.configuracao["interface"], self._portas(),
+                alvo=self.seletor or None)
         except ErroOperacao as erro:
             logger.error("consulta de ONTs falhou: %s", erro)
             return []
@@ -1574,6 +1593,39 @@ def _exibir_passos(resultados):
         print("  %s" % comando)
 
 
+def _exibir_roteiro(sessao, resultados):
+    """Mostra a transcrição completa do que o script faz na OLT.
+
+    São listados os comandos de leitura efetivamente enviados e, em seguida,
+    os comandos de alteração que seriam enviados apenas com `--execute`.
+    """
+    print("")
+    print("=" * 72)
+    print("TRANSCRIÇÃO - comandos enviados à OLT (somente leitura)")
+    print("=" * 72)
+    enviados = list(getattr(sessao, "comandos", []))
+    if not enviados:
+        print("  (nenhum comando registrado)")
+    for comando in enviados:
+        print("  [LEITURA] %s" % comando)
+    print("")
+    print("=" * 72)
+    print("TRANSCRIÇÃO - comandos de ALTERAÇÃO (enviados só com --execute)")
+    print("=" * 72)
+    encontrado = False
+    for identificador, resultado in sorted(resultados.items()):
+        passos = resultado.get("passos", [])
+        if not passos:
+            continue
+        encontrado = True
+        print("")
+        print("  ONT %s" % identificador)
+        for comando in exibir_comandos(passos):
+            print("    [ALTERAÇÃO] %s" % comando)
+    if not encontrado:
+        print("  (nenhuma ONT classificada para reprovisionamento)")
+
+
 def _exibir_contagem(resultados):
     contagem = {}
     for resultado in resultados.values():
@@ -1654,6 +1706,9 @@ def _parse_argumentos(argv):
                       help="executa o fluxo com uma OLT simulada")
     parser.add_argument("--diagnostico", action="store_true",
                       help="mostra o estado descoberto em cada ONT (só leitura)")
+    parser.add_argument("--roteiro", action="store_true",
+                      help="mostra a transcrição completa de comandos "
+                           "(leituras enviadas e alterações planejadas)")
     return parser.parse_args(argv)
 
 
@@ -1669,7 +1724,7 @@ def _executar_diagnostico(sessao, configuracao, seletor):
     """
     interface = configuracao["interface"]
     portas = portas_configuradas(configuracao)
-    onts = listar_onts(sessao, interface, portas)
+    onts = listar_onts(sessao, interface, portas, alvo=seletor or None)
     if seletor.get("ont_id") is not None:
         onts = {chave: ont for chave, ont in onts.items()
                 if chave == seletor["ont_id"]}
@@ -1783,6 +1838,8 @@ def main(argv=None):
         _exibir_configuracao(configuracao)
         if not executar:
             _exibir_passos(resultados)
+        if argumentos.roteiro:
+            _exibir_roteiro(sessao, resultados)
         _exibir_contagem(resultados)
         if argumentos.relatorio:
             gravar_resultados(

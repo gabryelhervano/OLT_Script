@@ -40,6 +40,10 @@ python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --diagnostico
 # Diagnóstico de uma única ONT.
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --diagnostico --ont-id 42
 
+# Transcrição completa: mostra TODOS os comandos (as consultas enviadas e os
+# comandos de alteração que seriam enviados apenas com --execute).
+python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --roteiro --serial HWTC0D3BDDA7
+
 # Limita a execução a uma ONT (padrão conservador).
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --limit 1
 
