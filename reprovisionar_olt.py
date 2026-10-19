@@ -1087,8 +1087,21 @@ CABECHAS_RELATO = [
 ]
 
 
+def _configurar_codificacao():
+    """Garante UTF-8 na saída (necessário no console do Windows)."""
+    for fluxo in (sys.stdout, sys.stderr):
+        reconfigurar = getattr(fluxo, "reconfigure", None)
+        if reconfigurar is None:
+            continue
+        try:
+            reconfigurar(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
 def gravar_relatorio(caminho, linhas):
-    with open(caminho, "w", encoding="utf-8", newline="") as arquivo:
+    # utf-8-sig: o Excel do Windows abre o relatório sem acentos quebrados.
+    with open(caminho, "w", encoding="utf-8-sig", newline="") as arquivo:
         escritor = csv.writer(arquivo)
         escritor.writerow(CABECHAS_RELATO)
         for linha in linhas:
@@ -1639,6 +1652,7 @@ def _executar_diagnostico(sessao, configuracao, seletor):
 
 
 def main(argv=None):
+    _configurar_codificacao()
     argumentos = _parse_argumentos(argv)
     logging.basicConfig(
         level=logging.INFO,
