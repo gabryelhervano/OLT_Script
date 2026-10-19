@@ -88,6 +88,12 @@ operador.
   (VLAN, prioridade, gemport, user-vlan, perfis WAN/TR-069) são exatamente os
   que já estavam na OLT, descobertos a cada execução; não há parâmetro deles
   no arquivo de configuração.
+- A sequência de comandos é dirigida pelo estado: `ont port native-vlan`,
+  `ont tr069-server-config`, `ont internet-config` e `ont wan-config` só são
+  enviados quando existem na configuração corrente da ONT. Se a ONT não for
+  encontrada na configuração corrente, a sequência validada completa é usada
+  e os perfis precisam ser descobertos — caso contrário a ONT fica
+  `INCONCLUSIVO`.
 - A validação final considera o estado imediatamente após os comandos; se a
   PPPoE demorar para conectar, a ONT é marcada `PARCIAL` e nenhuma nova
   configuração é enviada automaticamente.

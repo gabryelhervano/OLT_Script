@@ -508,6 +508,85 @@ class TestesFluxo(unittest.TestCase):
         self.assertEqual(
             resultados["0/1/4/42"]["classe"], script.PADRAO_1_COMPLETA)
 
+    def test_comandos_opcionais_seguem_o_estado(self):
+        # ONT sem TR-069, WAN e native-vlan na configuração corrente: esses
+        # comandos não são enviados, porque o estado é reproduzido e nada
+        # é inventado.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            " ont-srvprofile gpon profile-id 100 profile-name \"SRV-PADRAO\"\n"
+            " ont-lineprofile gpon profile-id 10 profile-name \"LINE-PADRAO\"\n"
+            " ont add 4 42 sn-auth \"HWTC0D3BDDA7\" omci ont-lineprofile-id 10"
+            " ont-srvprofile-id 100 desc \"joao\"\n"
+            " ont ipconfig 4 42 pppoe vlan 2551 priority 5 user-account"
+            " username \"joao\" password \"********\"\n")
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=False,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resultados = orquestrador.executar(
+            [registro], indice_por_serial, indice_por_usuario)
+        info = resultados["0/1/4/42"]
+        self.assertEqual(info["classe"], script.PADRAO_1_COMPLETA)
+        comandos = [passo for passo in info["passos"]
+                    if not passo.startswith("display")]
+        self.assertNotIn("ont port native-vlan 4 42 eth 1 vlan 2551 priority 0",
+                         comandos)
+        self.assertFalse([passo for passo in comandos
+                          if passo.startswith("ont tr069-server-config")])
+        self.assertFalse([passo for passo in comandos
+                          if passo.startswith("ont wan-config")])
+        self.assertFalse([passo for passo in comandos
+                          if passo.startswith("ont internet-config")])
+        # O essencial continua presente, com o line-profile configurável.
+        self.assertIn("ont add 4 42 sn-auth \"HWTC0D3BDDA7\" omci "
+                      "ont-lineprofile-id 11 ont-srvprofile-id 100 "
+                      "desc \"joao\"", comandos)
+        self.assertTrue([passo for passo in comandos if passo.startswith(
+            "ont ipconfig 4 42 pppoe vlan 2551 priority 5 user-account "
+            "username \"joao\"")])
+
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o
         # srvprofile: nada pode ser assumido, então a ONT fica INCONCLUSIVO

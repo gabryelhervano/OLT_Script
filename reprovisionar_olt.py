@@ -745,6 +745,14 @@ _PADRAO_ONT_INTERNET = re.compile(
 _PADRAO_ONT_WAN = re.compile(
     r"ont\s+wan-config\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b.*?"
     r"profile-id\s+(?P<profile>\d+)")
+_PADRAO_ONT_NATIVE_VLAN = re.compile(
+    r"ont\s+port\s+native-vlan\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b")
+_PADRAO_ONT_IPCONFIG = re.compile(
+    r"ont\s+ipconfig\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b.*?"
+    r"pppoe\s+vlan\s+(?P<vlan>\d+)\s+priority\s+(?P<prioridade>\d+)")
+_PADRAO_ONT_USUARIO = re.compile(
+    r"ont\s+ipconfig\s+(?P<porta>\d+)\s+(?P<ont_id>\d+)\b.*?"
+    r"user-account\s+username\s+\"(?P<usuario>[^\"]*)\"")
 
 
 def _consultar_configuracao_atual(sessao):
@@ -797,6 +805,23 @@ def _consultar_configuracao_atual(sessao):
             onts.setdefault(chave, {})["wanprofile"] = int(
                 achado.group("profile"))
             onts[chave]["wan"] = True
+            continue
+        achado = _PADRAO_ONT_NATIVE_VLAN.search(linha)
+        if achado:
+            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
+            onts.setdefault(chave, {})["native_vlan"] = True
+            continue
+        achado = _PADRAO_ONT_IPCONFIG.search(linha)
+        if achado:
+            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
+            dados_ont = onts.setdefault(chave, {})
+            dados_ont["vlan"] = achado.group("vlan")
+            dados_ont["prioridade"] = achado.group("prioridade")
+            continue
+        achado = _PADRAO_ONT_USUARIO.search(linha)
+        if achado:
+            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
+            onts.setdefault(chave, {})["usuario"] = achado.group("usuario")
             continue
     return {"perfis": perfis, "onts": onts}
 
@@ -890,18 +915,18 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
     servico = servicos[0] if servicos else None
     campos_wan = _campos(wan_info)
     campos_ip = _campos(ipconfig)
-    vlane = _campo(campos_ip, "ONT manage VLAN", "Manage VLAN")
-    if not vlane:
-        vlane = _campo(campos_wan, "Manage VLAN", "ONT manage VLAN")
-    if not vlane:
-        raise ErroOperacao("VLAN atual não identificada")
 
     atual = (config_atual or {}).get("onts", {}).get((porta, ont_id))
     if atual is None:
         # A ONT não apareceu na configuração corrente: adota-se a sequência
-        # validada (TR-069, internet e WAN) e os perfis precisam ser
-        # descobertos; se não forem, a ONT fica bloqueada.
-        atual = {"tr069": True, "internet": True, "wan": True}
+        # validada (native-vlan, TR-069, internet e WAN) e os perfis precisam
+        # ser descobertos; se não forem, a ONT fica bloqueada.
+        atual = {
+            "native_vlan": True,
+            "tr069": True,
+            "internet": True,
+            "wan": True,
+        }
     perfis = (config_atual or {}).get("perfis", {})
     nomes = _consultar_perfil_ont(sessao, interface, porta, ont_id)
 
@@ -912,17 +937,28 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
     if tr069profile is None and nomes.get("linha"):
         tr069profile = perfis.get("linha", {}).get(nomes["linha"])
     wanprofile = atual.get("wanprofile")
+    usuario = _campo(campos_ip, "PPPoE username", "Username") or \
+        atual.get("usuario") or ""
+    vlane = _campo(campos_ip, "ONT manage VLAN", "Manage VLAN") or \
+        atual.get("vlan")
+    if not vlane:
+        vlane = _campo(campos_wan, "Manage VLAN", "ONT manage VLAN")
+    if not vlane:
+        raise ErroOperacao("VLAN atual não identificada")
+    prioridade = _campo(
+        campos_ip, "ONT manage priority", "Manage priority") or \
+        atual.get("prioridade")
 
     return {
-        "usuario": _campo(campos_ip, "PPPoE username", "Username"),
+        "usuario": usuario,
         "vlane": vlane,
-        "prioridade": _campo(
-            campos_ip, "ONT manage priority", "Manage priority"),
+        "prioridade": prioridade,
         "configuracao": _campo(campos_ip, "ONT config type", "Config type"),
         "lineprofile_atual": atual.get("lineprofile"),
         "srvprofile": srvprofile,
         "tr069profile": tr069profile,
         "wanprofile": wanprofile,
+        "native_vlan": bool(atual.get("native_vlan")),
         "tr069": bool(atual.get("tr069")),
         "internet": bool(atual.get("internet")),
         "wan_config": bool(atual.get("wan")),
@@ -953,7 +989,8 @@ def montar_passos(interface, configuracao, estado_original):
     passos.append(comando_remover_ont(porta, ont_id))
     passos.append(comando_criar_ont(configuracao))
     passos.append(comando_configurar_pppoe(configuracao))
-    passos.append(comando_native_vlan(configuracao))
+    if configuracao.get("native_vlan", True):
+        passos.append(comando_native_vlan(configuracao))
     if configuracao.get("tr069"):
         passos.append(comando_configurar_tr069(configuracao))
     if configuracao.get("internet"):
@@ -1180,7 +1217,7 @@ class Orquestrador:
             for campo in ("vlane", "prioridade", "srvprofile",
                          "tr069profile", "wanprofile", "gemport",
                          "user_vlan", "service_port", "tr069", "internet",
-                         "wan_config"):
+                         "wan_config", "native_vlan"):
                 if campo in estado_atual:
                     dados[campo] = estado_atual[campo]
             resultado = self._classificar(
@@ -1350,6 +1387,7 @@ class Orquestrador:
             "tr069": dados.get("tr069", False),
             "internet": dados.get("internet", False),
             "wan_config": dados.get("wan_config", False),
+            "native_vlan": dados.get("native_vlan", False),
             "usuario": dados["usuario"],
             "senha": dados["senha"],
             "gemport": dados["gemport"],
