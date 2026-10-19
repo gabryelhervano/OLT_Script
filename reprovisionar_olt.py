@@ -212,7 +212,7 @@ def _executar_teste_cli(sessao, configuracao):
 def _parse_argumentos(argv):
     parser = argparse.ArgumentParser(
         description="Reprovisionamento de ONTs em OLTs Huawei.")
-    parser.add_argument("--file", dest="arquivo", required=True,
+    parser.add_argument("--file", dest="arquivo", default="",
                         help="caminho da planilha PPPoE")
     parser.add_argument("--olt", dest="olt", default="",
                         help="identificação da OLT configurada")
@@ -244,6 +244,8 @@ def _parse_argumentos(argv):
     parser.add_argument("--roteiro", action="store_true",
                         help="mostra a transcrição completa de comandos "
                              "(leituras enviadas e alterações planejadas)")
+    parser.add_argument("--versao", action="store_true",
+                        help="mostra a versão e sai")
     return parser.parse_args(argv)
 
 
@@ -279,6 +281,14 @@ def _abrir_sessao(configuracao, executar, simular):
 def main(argv=None):
     configurar_codificacao()
     argumentos = _parse_argumentos(argv)
+    if argumentos.versao:
+        import olt
+
+        print("reprovisionar_olt %s" % olt.__version__)
+        return 0
+    if not argumentos.arquivo:
+        print("ERRO: informe a planilha com --file")
+        return 1
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",

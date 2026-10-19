@@ -31,7 +31,10 @@ from .relatorio import carregar_registro, chave_ont, gravar_relatorio, \
 from .sessao import SessaoSimulada, SessaoSSH, Simulador, Transporte, \
     conectar_ssh
 
+__version__ = "1.1.0"
+
 __all__ = [
+    "__version__",
     "BLOQUEADA_AMBIGUIDADE",
     "BLOQUEADA_DIVERGENCIA",
     "ControleExecucao",
