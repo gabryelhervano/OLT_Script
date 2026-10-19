@@ -198,8 +198,20 @@ class Orquestrador:
             except ErroOperacao as erro:
                 logger.error("leitura da configuração corrente falhou: %s",
                              erro)
-                self._config_atual = {"perfis": {}, "onts": {}}
+                self._config_atual = {"perfis": {}, "onts": {}, "usados": {}}
+            self._config_atual["seguir_sequencia_validada"] = \
+                self._seguir_sequencia_validada()
         return self._config_atual
+
+    def _seguir_sequencia_validada(self):
+        """Indica se TR-069, internet e WAN devem ser reaplicados.
+
+        A sequência validada sempre os inclui; sem isso, uma ONT perderia a
+        configuração de WAN/TR-069 ao ser apagada e recriada.
+        """
+        valor = str(self.configuracao.get("seguir_sequencia_validada")
+                    or "sim").strip().lower()
+        return valor in ("1", "sim", "yes", "true")
 
     def _listar_onts(self):
         try:

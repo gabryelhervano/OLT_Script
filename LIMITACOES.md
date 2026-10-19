@@ -88,12 +88,12 @@ operador.
   (VLAN, prioridade, gemport, user-vlan, perfis WAN/TR-069) são exatamente os
   que já estavam na OLT, descobertos a cada execução; não há parâmetro deles
   no arquivo de configuração.
-- A sequência de comandos é dirigida pelo estado: `ont port native-vlan`,
-  `ont tr069-server-config`, `ont internet-config` e `ont wan-config` só são
-  enviados quando existem na configuração corrente da ONT. Se a ONT não for
-  encontrada na configuração corrente, a sequência validada completa é usada
-  e os perfis precisam ser descobertos — caso contrário a ONT fica
-  `INCONCLUSIVO`.
+- A sequência validada reaplica em toda ONT reprovisionada o `native-vlan`,
+  o `TR-069`, o `internet-config` e o `wan-config`: como a ONT é apagada e
+  recriada, sem esses comandos ela ficaria sem a configuração de WAN. Quando a
+  ONT não tem perfis próprios, são usados os mais usados na própria OLT. A
+  opção `seguir_sequencia_validada = nao` restricts o envio ao que já existe
+  em cada ONT.
 - ONTs que já estão com o line-profile configurado são puladas e classificadas
   como `JA_CONFIGURADA`: reprovisioná-las de novo só geraria retrabalho e um
   breve período sem serviço na CPE. A opção `reprovisionar_ja_configuradas`

@@ -143,7 +143,7 @@ def _executar_diagnostico(sessao, configuracao, seletor):
         return
     print("ONTs encontradas: %d" % len(onts))
     try:
-        config_atual = _configuracao_atual(sessao)
+        config_atual = _configuracao_atual(sessao, configuracao)
     except ErroOperacao as erro:
         print("configuração corrente indisponível: %s" % erro)
         config_atual = {"perfis": {}, "onts": {}}
@@ -175,10 +175,14 @@ def _executar_diagnostico(sessao, configuracao, seletor):
                   % (flag, "sim" if estado.get(flag) else "não"))
 
 
-def _configuracao_atual(sessao):
+def _configuracao_atual(sessao, configuracao):
     from olt.descoberta import _consultar_configuracao_atual
 
-    return _consultar_configuracao_atual(sessao)
+    atual = _consultar_configuracao_atual(sessao)
+    valor = str(configuracao.get("seguir_sequencia_validada") or "sim")
+    atual["seguir_sequencia_validada"] = valor.strip().lower() in (
+        "1", "sim", "yes", "true")
+    return atual
 
 
 def _executar_teste_cli(sessao, configuracao):

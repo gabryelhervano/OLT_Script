@@ -27,6 +27,7 @@ _PADROES_CONFIG = {
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
     "reprovisionar_ja_configuradas": ("OLT_REPROVISIONAR_JA_CONFIGURADAS", ""),
+    "seguir_sequencia_validada": ("OLT_SEQUENCIA_VALIDADA", "sim"),
     "portas": ("OLT_PORTAS", "0-15"),
 }
 

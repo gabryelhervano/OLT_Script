@@ -603,6 +603,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "seguir_sequencia_validada": "nao",
         }
         orquestrador = script.Orquestrador(
             configuracao=configuracao,
@@ -940,6 +941,75 @@ class TestesFluxo(unittest.TestCase):
             [registro], indice_por_serial, indice_por_usuario)
         info = resultados["0/1/4/42"]
         self.assertEqual(info["classe"], script.JA_CONFIGURADA)
+
+    def test_sequencia_validada_reaplica_tr069_e_wan(self):
+        # A ONT 42 não tem TR-069/WAN próprios, mas a OLT usa o perfil
+        # TR-069 1 e o WAN 10: a sequência validada os reaplica, porque a
+        # ONT é apagada e recriada.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            ' ont-srvprofile gpon profile-id 100 profile-name "SRV-PADRAO"\n'
+            ' ont-lineprofile gpon profile-id 10 profile-name "LINE-PADRAO"\n'
+            ' ont add 4 42 sn-auth "HWTC0D3BDDA7" omci ont-lineprofile-id 10'
+            ' ont-srvprofile-id 100 desc "joao"\n'
+            ' ont add 4 43 sn-auth "HWTC0D3BDDA9" omci ont-lineprofile-id 10'
+            ' ont-srvprofile-id 100 desc "maria"\n'
+            ' ont tr069-server-config 4 43 profile-id 1\n'
+            ' ont internet-config 4 43 ip-index 0\n'
+            ' ont wan-config 4 43 ip-index 0 profile-id 10\n')
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=False,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resultados = orquestrador.executar(
+            [registro], indice_por_serial, indice_por_usuario)
+        comandos = resultados["0/1/4/42"]["passos"]
+        self.assertIn("ont tr069-server-config 4 42 profile-id 1", comandos)
+        self.assertIn("ont internet-config 4 42 ip-index 0", comandos)
+        self.assertIn("ont wan-config 4 42 ip-index 0 profile-id 10", comandos)
+        self.assertIn(
+            "ont port native-vlan 4 42 eth 1 vlan 2551 priority 0", comandos)
 
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o

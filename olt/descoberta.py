@@ -165,6 +165,7 @@ def _consultar_configuracao_atual(sessao):
     saida = sessao.executar("display current-configuration | include ont")
     perfis = {"srv": {}, "linha": {}}
     onts = {}
+    usados = {"tr069": {}, "wan": {}}
     for linha in _desembrulhar(saida.splitlines()):
         achado = _PADRAO_SRVPROFILE.search(linha)
         if achado:
@@ -192,6 +193,8 @@ def _consultar_configuracao_atual(sessao):
             onts.setdefault(chave, {})["tr069profile"] = int(
                 achado.group("profile"))
             onts[chave]["tr069"] = True
+            perfil = int(achado.group("profile"))
+            usados["tr069"][perfil] = usados["tr069"].get(perfil, 0) + 1
             continue
         achado = _PADRAO_ONT_INTERNET.search(linha)
         if achado:
@@ -204,6 +207,8 @@ def _consultar_configuracao_atual(sessao):
             onts.setdefault(chave, {})["wanprofile"] = int(
                 achado.group("profile"))
             onts[chave]["wan"] = True
+            perfil = int(achado.group("profile"))
+            usados["wan"][perfil] = usados["wan"].get(perfil, 0) + 1
             continue
         achado = _PADRAO_ONT_NATIVE_VLAN.search(linha)
         if achado:
@@ -222,7 +227,7 @@ def _consultar_configuracao_atual(sessao):
             chave = (int(achado.group("porta")), int(achado.group("ont_id")))
             onts.setdefault(chave, {})["usuario"] = achado.group("usuario")
             continue
-    return {"perfis": perfis, "onts": onts}
+    return {"perfis": perfis, "onts": onts, "usados": usados}
 
 
 _PADRAO_SERVICE_PORT = re.compile(
@@ -294,6 +299,13 @@ def _consultar_servicos(sessao, interface, porta, ont_id):
     return servicos
 
 
+def _mais_usado(contagem):
+    """Identificador mais usado, com desempate pelo menor valor."""
+    if not contagem:
+        return None
+    return sorted(contagem.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
 def _campo(campos, *chaves):
     """Devolve o primeiro campo presente entre as chaves informadas."""
     for chave in chaves:
@@ -343,6 +355,7 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
             "internet": True,
             "wan": True,
         }
+    usados = (config_atual or {}).get("usados", {})
     perfis = (config_atual or {}).get("perfis", {})
     nomes = _consultar_perfil_ont(sessao, interface, porta, ont_id)
 
@@ -351,6 +364,18 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
         srvprofile = perfis.get("srv", {}).get(nomes["srv"])
     tr069profile = atual.get("tr069profile")
     wanprofile = atual.get("wanprofile")
+    if config_atual is None or config_atual.get("seguir_sequencia_validada"):
+        # A sequência validada reaplica TR-069, internet e WAN em toda ONT
+        # reprovisionada. Quando a ONT não tem esses perfis, usa-se o mais
+        # usado na própria OLT.
+        if not atual.get("tr069") and usados.get("tr069"):
+            tr069profile = _mais_usado(usados["tr069"])
+            atual = dict(atual, tr069=True, internet=True)
+        if not atual.get("wan") and usados.get("wan"):
+            wanprofile = _mais_usado(usados["wan"])
+            atual = dict(atual, wan=True)
+        # O native-vlan também se perde com a recriação da ONT.
+        atual = dict(atual, native_vlan=True)
     # O line-profile em uso vem da linha `ont add`; quando ela não pôde ser
     # lida (linha truncada pelo terminal), o nome informado pelo
     # `display ont profile` resolve o identificador.
