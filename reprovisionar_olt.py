@@ -372,6 +372,7 @@ class SessaoSSH:
         self.conectada = False
         self.buffer = ""
         self.comandos = []
+        self._undo_paginacao = ""
 
     def conectar(self):
         host = self.configuracao["host"]
@@ -502,6 +503,7 @@ class SessaoSSH:
             saida = self._tentar_comando(comando)
             if not _comando_desconhecido(saida):
                 logger.info("paginacao da CLI desativada (%s)", comando)
+                self._undo_paginacao = _UNDO_PAGINACAO.get(comando, "undo scroll")
                 return
         logger.warning(
             "a CLI nao aceitou nenhum comando de desativacao da paginacao "
@@ -592,6 +594,15 @@ class SessaoSSH:
 
     def fechar(self):
         if self.conectada:
+            # Restaura a paginação da CLI antes de sair (o `undo scroll`
+            # devolve o comportamento padrão da sessão).
+            if self._undo_paginacao:
+                try:
+                    self._tentar_comando(self._undo_paginacao, timeout=5)
+                    logger.info("paginacao da CLI restaurada (%s)",
+                                self._undo_paginacao)
+                except Exception:
+                    logger.exception("falha ao restaurar a paginação da CLI")
             try:
                 self.sessao.close()
             except Exception:
@@ -1763,6 +1774,14 @@ def portas_configuradas(configuracao):
         else:
             portas.append(int(item))
     return portas
+
+
+_UNDO_PAGINACAO = {
+    "scroll": "undo scroll",
+    "scroll 512": "undo scroll",
+    "screen-length 0 temporary": "undo screen-length temporary",
+    "screen-length disable": "undo screen-length",
+}
 
 
 def _comando_desconhecido(saida):
