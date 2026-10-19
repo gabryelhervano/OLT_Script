@@ -8,6 +8,7 @@ contém senhas.
 import csv
 import json
 import os
+import sys
 
 
 ARQUIVO_REGISTRO = "registro_operacoes.json"

@@ -211,6 +211,23 @@ RESPOSTA_RESUMO_ONTS = """  In port 0/1/4, the total of ONTs are: 2, online: 1
 """
 
 
+class TestesSessao(unittest.TestCase):
+    def test_deteccao_de_prompt(self):
+        sessao = script.SessaoSSH({})
+        self.assertTrue(sessao._prompt_no_buffer("OLT_MA5800-SANTA_RITA#"))
+        self.assertTrue(sessao._prompt_no_buffer("OLT_MA5800-SANTA_RITA>"))
+        self.assertTrue(
+            sessao._prompt_no_buffer("OLT_MA5800-SANTA_RITA(config)#"))
+        self.assertFalse(sessao._prompt_no_buffer(""))
+        self.assertFalse(sessao._prompt_no_buffer("saida sem prompt"))
+
+    def test_comandos_mascarados(self):
+        comando = 'ont ipconfig 4 42 pppoe vlan 2551 password "segredo"'
+        mascarado = script.exibir_comandos([comando])[0]
+        self.assertIn('password "********"', mascarado)
+        self.assertNotIn("segredo", mascarado)
+
+
 class TestesFluxo(unittest.TestCase):
     def setUp(self):
         self.sessao = script.SessaoSimulada()

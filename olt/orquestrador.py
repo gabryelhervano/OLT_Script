@@ -8,12 +8,12 @@ são apenas montados e mostrados.
 import logging
 import time
 
+from . import interacao
 from .classificacao import classificar
 from .comandos import montar_passos
 from .configuracao import portas_configuradas
-from .descoberta import (_consultar_configuracao_atual, capturar_estado,
-                      listar_onts)
-from . import interacao
+from .descoberta import (_consultar_configuracao_atual, _consultar_servicos,
+                         capturar_estado, listar_onts, validar_estado_final)
 from .erros import ErroOperacao
 from .estados import (ESTADO_INCONCLUSIVO, ESTADO_SUCESSO,
                       PADRAO_1_COMPLETA, PADRAO_2_PPPOE, PADRAO_2_SERIAL)

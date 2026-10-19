@@ -6,6 +6,7 @@ no DRY-RUN, e a sessão simulada, usada nos testes e no modo `--mock`.
 
 import logging
 import os
+import re
 import select
 import time
 
