@@ -161,9 +161,10 @@ def _executar_diagnostico(sessao, configuracao, seletor):
         except ErroOperacao as erro:
             print("   INCONCLUSIVO: %s" % erro)
             continue
-        for campo in ("usuario", "vlane", "prioridade", "srvprofile",
-                      "tr069profile", "wanprofile", "gemport", "user_vlan",
-                      "service_port", "tipo_wan", "status_conexao", "mac"):
+        for campo in ("usuario", "vlane", "prioridade", "lineprofile_atual",
+                      "srvprofile", "tr069profile", "wanprofile", "gemport",
+                      "user_vlan", "service_port", "tipo_wan",
+                      "status_conexao", "mac"):
             valor = estado.get(campo)
             if valor in (None, ""):
                 print("   %-15s: (não identificado)" % campo)
