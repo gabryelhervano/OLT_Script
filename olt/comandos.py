@@ -184,14 +184,10 @@ def montar_passos(interface, configuracao, estado_original):
     passos.append(comando_remover_ont(porta, ont_id))
     passos.append(comando_criar_ont(configuracao))
     passos.append(comando_configurar_pppoe(configuracao))
-    if configuracao.get("native_vlan", True):
-        passos.append(comando_native_vlan(configuracao))
-    if configuracao.get("tr069"):
-        passos.append(comando_configurar_tr069(configuracao))
-    if configuracao.get("internet"):
-        passos.append(comando_configurar_internet(configuracao))
-    if configuracao.get("wan_config"):
-        passos.append(comando_configurar_wan(configuracao))
+    passos.append(comando_native_vlan(configuracao))
+    passos.append(comando_configurar_tr069(configuracao))
+    passos.append(comando_configurar_internet(configuracao))
+    passos.append(comando_configurar_wan(configuracao))
     passos.append(comando_sair_interface())
     passos.append(comando_criar_service_port(configuracao))
     passos.append(comando_exibir_wan_info(interface, porta, ont_id))

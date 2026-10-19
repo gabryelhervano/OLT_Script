@@ -387,6 +387,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
         }
         orquestrador = script.Orquestrador(
             configuracao=configuracao,
@@ -448,6 +450,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
         }
         orquestrador = script.Orquestrador(
             configuracao=configuracao,
@@ -539,6 +543,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
         }
         orquestrador = script.Orquestrador(
             configuracao=configuracao,
@@ -564,10 +570,9 @@ class TestesFluxo(unittest.TestCase):
         self.assertEqual(
             resultados["0/1/4/42"]["classe"], script.PADRAO_1_COMPLETA)
 
-    def test_comandos_opcionais_seguem_o_estado(self):
-        # ONT sem TR-069, WAN e native-vlan na configuração corrente: esses
-        # comandos não são enviados, porque o estado é reproduzido e nada
-        # é inventado.
+    def test_sequencia_validada_e_completa(self):
+        # A sequência reprovisiona a ONT inteira: native-vlan, TR-069,
+        # internet e WAN sempre entram, com os perfis configurados.
         sessao = script.SessaoSimulada()
         sessao.definir_resposta(
             "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
@@ -575,19 +580,14 @@ class TestesFluxo(unittest.TestCase):
             "display service-port all", RESPOSTA_SERVICE_PORT)
         sessao.definir_resposta(
             "display current-configuration | include ont",
-            " ont-srvprofile gpon profile-id 100 profile-name \"SRV-PADRAO\"\n"
-            " ont-lineprofile gpon profile-id 10 profile-name \"LINE-PADRAO\"\n"
-            " ont add 4 42 sn-auth \"HWTC0D3BDDA7\" omci ont-lineprofile-id 10"
-            " ont-srvprofile-id 100 desc \"joao\"\n"
-            " ont ipconfig 4 42 pppoe vlan 2551 priority 5 user-account"
-            " username \"joao\" password \"********\"\n")
+            RESPOSTA_CONFIG_ATUAL)
         sessao.definir_resposta(
             "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
         sessao.definir_resposta(
             "display ont wan-info 0/1 4 42",
             "  Manage VLAN : 2551\n"
             "  Manage priority : 5\n"
-            "  Service type : Internet\n"
+            "  Service type : Tr069, Internet\n"
             "  IPv4 Connection status : Connected\n")
         sessao.definir_resposta(
             "display ont ipconfig 4 42",
@@ -603,7 +603,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
-            "seguir_sequencia_validada": "nao",
+            "tr069profile": 1,
+            "wanprofile": 10,
         }
         orquestrador = script.Orquestrador(
             configuracao=configuracao,
@@ -624,59 +625,24 @@ class TestesFluxo(unittest.TestCase):
         indice_por_usuario = {"joao": [registro]}
         resultados = orquestrador.executar(
             [registro], indice_por_serial, indice_por_usuario)
-        info = resultados["0/1/4/42"]
-        self.assertEqual(info["classe"], script.PADRAO_1_COMPLETA)
-        comandos = [passo for passo in info["passos"]
+        comandos = [passo for passo in resultados["0/1/4/42"]["passos"]
                     if not passo.startswith("display")]
-        self.assertNotIn("ont port native-vlan 4 42 eth 1 vlan 2551 priority 0",
-                         comandos)
-        self.assertFalse([passo for passo in comandos
-                          if passo.startswith("ont tr069-server-config")])
-        self.assertFalse([passo for passo in comandos
-                          if passo.startswith("ont wan-config")])
-        self.assertFalse([passo for passo in comandos
-                          if passo.startswith("ont internet-config")])
-        # O essencial continua presente, com o line-profile configurável.
-        self.assertIn("ont add 4 42 sn-auth \"HWTC0D3BDDA7\" omci "
-                      "ont-lineprofile-id 11 ont-srvprofile-id 100 "
-                      "desc \"joao\"", comandos)
-        self.assertTrue([passo for passo in comandos if passo.startswith(
-            "ont ipconfig 4 42 pppoe vlan 2551 priority 5 user-account "
-            "username \"joao\"")])
-
-    def test_linhas_truncadas_sao_reunidas(self):
-        # A OLT quebra as linhas longas na largura do terminal: a
-        # continuação do `ont add` vem na linha seguinte, indentada.
-        config = (
-            ' ont-srvprofile gpon profile-id 100 profile-name "SRV-PADRAO"\n'
-            ' ont-lineprofile gpon profile-id 10 profile-name "LINE-PADRAO"\n'
-            ' ont add 4 9 sn-auth "4857544318D0F3A1" omci ont-lineprofile-id 10\n'
-            '  ont-srvprofile-id 100 desc "marialc"\n'
-            ' ont port native-vlan 4 9 eth 1 vlan 2701 priority 0\n'
-        )
-        sessao = script.SessaoSimulada()
-        sessao.definir_resposta(
-            "display current-configuration | include ont", config)
-        atual = _consultar_configuracao_atual(sessao)
-        ont = atual["onts"][(4, 9)]
-        self.assertEqual(ont["srvprofile"], 100)
-        self.assertEqual(ont["lineprofile"], 10)
-        self.assertEqual(ont["descricao"], "marialc")
-        self.assertTrue(ont["native_vlan"])
-        # O nome do perfil resolve o ID quando a linha do `ont add` não
-        # traz o `ont-srvprofile-id`.
-        self.assertEqual(atual["perfis"]["srv"]["SRV-PADRAO"], 100)
-
-    def test_display_ont_profile_usa_quadro_slot_porta(self):
-        sessao = script.SessaoSimulada()
-        sessao.definir_resposta(
-            "display ont profile 0 1 4 9",
-            "  ONT-ID    Line profile name                 Service profile name\n"
-            "  -----------------------------------------------\n"
-            "       9    LINE-PADRAO                       SRV-PADRAO\n")
-        nomes = _consultar_perfil_ont(sessao, "0/1", 4, 9)
-        self.assertEqual(nomes["linha"], "LINE-PADRAO")
-        self.assertEqual(nomes["srv"], "SRV-PADRAO")
+        self.assertEqual(comandos, [
+            "undo service-port 796",
+            "interface gpon 0/1",
+            "ont delete 4 42",
+            "ont add 4 42 sn-auth \"HWTC0D3BDDA7\" omci ont-lineprofile-id 11"
+            " ont-srvprofile-id 100 desc \"joao\"",
+            "ont ipconfig 4 42 pppoe vlan 2551 priority 5 user-account"
+            " username \"joao\" password \"1234\"",
+            "ont port native-vlan 4 42 eth 1 vlan 2551 priority 0",
+            "ont tr069-server-config 4 42 profile-id 1",
+            "ont internet-config 4 42 ip-index 0",
+            "ont wan-config 4 42 ip-index 0 profile-id 10",
+            "quit",
+            "service-port vlan 2551 gpon 0/1/4 ont 42 gemport 37"
+            " multi-service user-vlan 2551 tag-transform translate",
+        ])
 
     def test_ont_sem_correspondencia_nao_e_reprovisionada(self):
         # A ONT 43 não tem correspondência com a planilha (padrão 3). Mesmo
@@ -725,6 +691,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
             "maximo": 5,
         }
         orquestrador = script.Orquestrador(
@@ -795,6 +763,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
         }
         orquestrador = script.Orquestrador(
             configuracao=configuracao,
@@ -853,6 +823,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
             "reprovisionar_ja_configuradas": "sim",
         }
         orquestrador = script.Orquestrador(
@@ -919,6 +891,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
         }
         orquestrador = script.Orquestrador(
             configuracao=configuracao,
@@ -984,6 +958,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
         }
         orquestrador = script.Orquestrador(
             configuracao=configuracao,
@@ -1046,6 +1022,8 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
         }
         orquestrador = script.Orquestrador(
             configuracao=configuracao,

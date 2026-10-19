@@ -94,13 +94,14 @@ python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --execute --limit 1
 
 ## Configuração
 
-A conexão e o line-profile usam variáveis de ambiente ou de um arquivo INI
+A conexão e os perfis usados vêm de variáveis de ambiente ou de um arquivo INI
 (`--config`). Veja `config_exemplo.ini` para a lista completa; nenhum valor
-real é necessário para o modo DRY-RUN. Somente o line-profile é configurável:
-todos os demais valores usados na reprovisão (VLAN, prioridade, gemport,
-user-vlan e perfis WAN/TR-069) são descobertos no estado atual da ONT a cada
-execução. Se algum deles não puder ser identificado, o ONT fica
-`INCONCLUSIVO` e nenhuma alteração é enviada.
+real é necessário para o modo DRY-RUN. São configuráveis o line-profile
+(`ont-lineprofile-id`), o perfil TR-069 (`ont tr069-server-config`) e o perfil
+WAN (`ont wan-config`); todos os demais valores usados na reprovisão (VLAN,
+prioridade, gemport, user-vlan e o srv-profile) são descobertos no estado
+atual da ONT a cada execução. Se algum deles não puder ser identificado, o
+ONT fica `INCONCLUSIVO` e nenhuma alteração é enviada.
 
 ### Autenticação por senha
 

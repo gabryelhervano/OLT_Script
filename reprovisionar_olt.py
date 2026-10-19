@@ -143,7 +143,7 @@ def _executar_diagnostico(sessao, configuracao, seletor):
         return
     print("ONTs encontradas: %d" % len(onts))
     try:
-        config_atual = _configuracao_atual(sessao, configuracao)
+        config_atual = _configuracao_atual(sessao)
     except ErroOperacao as erro:
         print("configuração corrente indisponível: %s" % erro)
         config_atual = {"perfis": {}, "onts": {}}
@@ -162,27 +162,25 @@ def _executar_diagnostico(sessao, configuracao, seletor):
             print("   INCONCLUSIVO: %s" % erro)
             continue
         for campo in ("usuario", "vlane", "prioridade", "lineprofile_atual",
-                      "srvprofile", "tr069profile", "wanprofile", "gemport",
-                      "user_vlan", "service_port", "tipo_wan",
-                      "status_conexao", "mac"):
+                      "srvprofile", "gemport", "user_vlan", "service_port",
+                      "tipo_wan", "status_conexao", "mac"):
             valor = estado.get(campo)
             if valor in (None, ""):
-                print("   %-15s: (não identificado)" % campo)
+                print("   %-17s: (não identificado)" % campo)
             else:
-                print("   %-15s: %s" % (campo, valor))
-        for flag in ("native_vlan", "tr069", "internet", "wan_config"):
-            print("   %-15s: %s"
-                  % (flag, "sim" if estado.get(flag) else "não"))
+                print("   %-17s: %s" % (campo, valor))
+        print("   %-17s: %s (configurado)"
+              % ("line-profile", configuracao["lineprofile"]))
+        print("   %-17s: %s (configurado)"
+              % ("tr069-profile", configuracao["tr069profile"]))
+        print("   %-17s: %s (configurado)"
+              % ("wan-profile", configuracao["wanprofile"]))
 
 
-def _configuracao_atual(sessao, configuracao):
+def _configuracao_atual(sessao):
     from olt.descoberta import _consultar_configuracao_atual
 
-    atual = _consultar_configuracao_atual(sessao)
-    valor = str(configuracao.get("seguir_sequencia_validada") or "sim")
-    atual["seguir_sequencia_validada"] = valor.strip().lower() in (
-        "1", "sim", "yes", "true")
-    return atual
+    return _consultar_configuracao_atual(sessao)
 
 
 def _executar_teste_cli(sessao, configuracao):

@@ -198,20 +198,8 @@ class Orquestrador:
             except ErroOperacao as erro:
                 logger.error("leitura da configuração corrente falhou: %s",
                              erro)
-                self._config_atual = {"perfis": {}, "onts": {}, "usados": {}}
-            self._config_atual["seguir_sequencia_validada"] = \
-                self._seguir_sequencia_validada()
+                self._config_atual = {"perfis": {}, "onts": {}}
         return self._config_atual
-
-    def _seguir_sequencia_validada(self):
-        """Indica se TR-069, internet e WAN devem ser reaplicados.
-
-        A sequência validada sempre os inclui; sem isso, uma ONT perderia a
-        configuração de WAN/TR-069 ao ser apagada e recriada.
-        """
-        valor = str(self.configuracao.get("seguir_sequencia_validada")
-                    or "sim").strip().lower()
-        return valor in ("1", "sim", "yes", "true")
 
     def _listar_onts(self):
         try:
@@ -346,26 +334,22 @@ class Orquestrador:
             "vlan": dados["vlane"],
             "prioridade": dados["prioridade"],
             "srvprofile": dados["srvprofile"],
-            "tr069profile": dados.get("tr069profile"),
-            "wanprofile": dados.get("wanprofile"),
-            "tr069": dados.get("tr069", False),
-            "internet": dados.get("internet", False),
-            "wan_config": dados.get("wan_config", False),
-            "native_vlan": dados.get("native_vlan", False),
+            "tr069profile": self.configuracao.get("tr069profile"),
+            "wanprofile": self.configuracao.get("wanprofile"),
             "usuario": dados["usuario"],
             "senha": dados["senha"],
             "gemport": dados["gemport"],
             "user_vlan": dados.get("user_vlan") or dados["vlane"],
         }
         for campo in ("vlan", "prioridade", "srvprofile", "gemport",
-                     "user_vlan"):
+                      "user_vlan"):
             if not configuracao[campo]:
                 raise ErroOperacao(
                     "valor atual não identificado: %s" % campo)
-        if configuracao["tr069"] and not configuracao.get("tr069profile"):
-            raise ErroOperacao("valor atual não identificado: tr069profile")
-        if configuracao["wan_config"] and not configuracao.get("wanprofile"):
-            raise ErroOperacao("valor atual não identificado: wanprofile")
+        for campo in ("tr069profile", "wanprofile"):
+            if not configuracao[campo]:
+                raise ErroOperacao(
+                    "perfil não configurado: %s" % campo)
         return configuracao
 
     def _montar_passos(self, dados):

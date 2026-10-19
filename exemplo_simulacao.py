@@ -166,6 +166,8 @@ def main():
         "chave": "",
         "interface": "0/1",
         "lineprofile": "11",
+        "tr069profile": "1",
+        "wanprofile": "10",
         "portas": "0-15",
         "maximo": 10,
     }
