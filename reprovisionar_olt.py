@@ -380,8 +380,16 @@ class SessaoSSH:
         self.sessao = cliente.invoke_shell()
         self.conectada = True
         self.buffer = ""
+        # Consome o banner de login antes de qualquer comando: sem isso as
+        # respostas ficam dessincronizadas (o prompt do banner é confundido
+        # com a resposta do comando) e a leitura seguinte expira.
+        self._esperar_prompt()
         self._entrar_em_enable()
         self._desativar_paginacao()
+
+    def _esperar_prompt(self, timeout=20):
+        """Aguarda o prompt inicial da CLI (banner de login)."""
+        return self._ler_ate(self._prompt_no_buffer, timeout)
 
     def _conectar(self, host, porta, usuario, senha):
         """Conecta discovering o método aceito pela OLT antes de autenticar.
