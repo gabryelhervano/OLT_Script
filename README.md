@@ -88,6 +88,29 @@ user-vlan e perfis WAN/TR-069) são descobertos no estado atual da ONT a cada
 execução. Se algum deles não puder ser identificado, o ONT fica
 `INCONCLUSIVO` e nenhuma alteração é enviada.
 
+### Autenticação por senha
+
+```ini
+[olt]
+host = 192.168.0.10
+porta = 22
+usuario = operador
+senha = a-senha-do-login
+enable = enable
+; senha_enable = ...   ; só se for diferente da senha de login
+```
+
+- O arquivo de configuração é ignorado pelo Git (`config.ini` no
+  `.gitignore`). Proteja-o: `chmod 600 config.ini`.
+- A senha **nunca** é enviada na linha de comando (evita aparecer na lista de
+  processos) e nunca é gravada em log, relatório ou saída.
+- A MA5800 exige `enable` para aceitar comandos de configuração (o prompt
+  passa de `>` para `#`). O script envia `enable` logo após conectar e, se a
+  OLT pedir senha para ele, reaproveita a senha de login (ou `senha_enable`).
+- A chave do servidor é validada: a OLT precisa estar em `~/.ssh/known_hosts`.
+  Se não estiver, acrescente com
+  `ssh-keyscan -H <ip-da-olt> >> ~/.ssh/known_hosts`.
+
 ## Relatório
 
 O relatório CSV registra, por ONT: identificador, padrão de CPE, método de

@@ -57,6 +57,8 @@ _PADROES_CONFIG = {
     "usuario": ("OLT_USUARIO", ""),
     "senha": ("OLT_SENHA", ""),
     "chave": ("OLT_CHAVE", ""),
+    "senha_enable": ("OLT_SENHA_ENABLE", ""),
+    "enable": ("OLT_ENABLE", "enable"),
     "interface": ("OLT_INTERFACE", "0/1"),
     "lineprofile": ("OLT_LINEPROFILE", "11"),
     "portas": ("OLT_PORTAS", "0-15"),
@@ -362,19 +364,40 @@ class SessaoSSH:
         host = self.configuracao["host"]
         porta = int(self.configuracao["porta"])
         chave = self.configuracao["chave"]
-        if chave:
-            cliente = paramiko.SSHClient()
-            cliente.load_system_host_keys()
-            cliente.set_missing_host_key_policy(paramiko.RejectPolicy())
-        else:
-            cliente = paramiko.SSHClient()
-            cliente.load_system_host_keys()
+        cliente = paramiko.SSHClient()
+        cliente.load_system_host_keys()
+        cliente.set_missing_host_key_policy(paramiko.RejectPolicy())
         cliente.connect(host, port=porta, username=self.configuracao["usuario"],
                       password=self.configuracao.get("senha", ""), look_for_keys=False,
                       allow_agent=False)
         self.sessao = cliente.invoke_shell()
         self.conectada = True
         self.buffer = ""
+        self._entrar_em_enable()
+
+    def _entrar_em_enable(self):
+        """Entra no modo privilegiado (`enable`), exigido por parte das CLIs.
+
+        Sem isso, a OLT recusa os comandos de configuração (o prompt fica em
+        `>` e não em `#`).
+        """
+        comando = (self.configuracao.get("enable") or "enable").strip()
+        if not comando:
+            return
+        senha = (self.configuracao.get("senha_enable") or
+                 self.configuracao.get("senha") or "")
+        self.sessao.send(comando + "\r")
+        saida = self._ler_ate(
+            lambda texto: "password" in texto.lower() or
+            self._prompt_no_buffer(texto), 10)
+        if "password" in saida.lower():
+            if not senha:
+                raise ErroOperacao(
+                    "a OLT pediu senha de enable (OLT_SENHA_ENABLE)")
+            self.sessao.send(senha + "\r")
+            saida = self._ler_ate(self._prompt_no_buffer, 10)
+        if "#" not in saida:
+            logger.warning("modo privilegiado (enable) nao confirmado")
 
     def executar(self, comando):
         if not self.conectada:
@@ -382,22 +405,26 @@ class SessaoSSH:
         comando = comando.strip()
         if not comando:
             return ""
-        inicio = time.monotonic()
         self.sessao.send(comando + "\r")
+        return self._ler_ate(self._prompt_no_buffer, self.timeout)
+
+    def _ler_ate(self, predicado, timeout):
+        """Lê a saída até o predicado ser satisfeito (ou o timeout)."""
+        inicio = time.monotonic()
         saida = ""
         while True:
             disponivel, _, _ = select.select([self.sessao], [], [], 1)
             if not disponivel:
-                if self._prompt_no_buffer(saida):
+                if predicado(saida):
                     break
-                if time.monotonic() - inicio > self.timeout:
+                if time.monotonic() - inicio > timeout:
                     raise ErroOperacao("timeout na execução do comando")
                 continue
             dados = self.sessao.recv(4096)
             if not dados:
                 break
             saida += dados.decode("utf-8", "replace")
-            if self._prompt_no_buffer(saida):
+            if predicado(saida):
                 break
         return saida
 
@@ -1649,6 +1676,11 @@ def main(argv=None):
             sessao = conectar_ssh(configuracao)
         except Exception as erro:
             print("ERRO: nao foi possivel conectar na OLT: %s" % erro)
+            if "known_hosts" in str(erro):
+                print("     a chave do servidor nao esta em ~/.ssh/known_hosts;")
+                print("     acrescente com:")
+                print("       ssh-keyscan -H %s >> ~/.ssh/known_hosts"
+                      % configuracao["host"])
             print("     use --mock para rodar sem OLT (dados simulados).")
             return 1
     else:
