@@ -390,6 +390,7 @@ class SessaoSSH:
         self._esperar_prompt()
         self._entrar_em_enable()
         self._desativar_paginacao()
+        self._entrar_em_configuracao()
 
     def _esperar_prompt(self, timeout=20):
         """Aguarda o prompt inicial da CLI (banner de login)."""
@@ -501,7 +502,7 @@ class SessaoSSH:
             if variante not in candidatos:
                 candidatos.append(variante)
         for comando in candidatos:
-            saida = self._tentar_comando(comando)
+            saida = self._tentar_comando(comando, enter_extra=True)
             if not _comando_desconhecido(saida):
                 logger.info("paginacao da CLI desativada (%s)", comando)
                 self._undo_paginacao = _UNDO_PAGINACAO.get(comando, "undo scroll")
@@ -530,7 +531,20 @@ class SessaoSSH:
         self._tentar_comando("quit", timeout=8)
         return False
 
-    def _tentar_comando(self, comando, timeout=20):
+    def _entrar_em_configuracao(self):
+        """Entra na visão de configuração (necessária aos comandos de alteração).
+
+        Na MA5800 o comando é `config` (na VRP padrão, `system-view`).
+        """
+        for comando in ("config", "system-view"):
+            saida = self._tentar_comando(comando, timeout=10)
+            if "[" in saida and not _comando_desconhecido(saida):
+                logger.info("visao de configuracao ativa (%s)", comando)
+                return True
+        logger.warning("nao foi possivel entrar na visao de configuracao")
+        return False
+
+    def _tentar_comando(self, comando, timeout=20, enter_extra=False):
         """Envia um comando e devolve a resposta crua da CLI.
 
         Algumas CLIs não reimprimem o prompt depois de determinados
@@ -538,9 +552,14 @@ class SessaoSSH:
         caso a espera expira, mas a sessão continua viva: o que já chegou
         é devolvido e a CLI é aguardada ficar ociosa antes do próximo
         comando (sem isso o texto se junta ao comando anterior).
+
+        `enter_extra` envia um Enter adicional depois do comando: o
+        `scroll` da MA5800 só é concluído com esse Enter.
         """
         self.comandos.append(comando)
         self._enviar(comando + self.terminador)
+        if enter_extra:
+            self._enviar(self.terminador)
         try:
             return self._ler_ate(self._prompt_no_buffer, timeout)
         except ErroOperacao:
@@ -649,8 +668,12 @@ class SessaoSSH:
 
     def fechar(self):
         if self.conectada:
-            # Restaura a paginação da CLI antes de sair (o `undo scroll`
-            # devolve o comportamento padrão da sessão).
+            # Sai da visão de configuração e restaura a paginação da CLI
+            # antes de encerrar (o `undo scroll` devolve o padrão).
+            try:
+                self._tentar_comando("quit", timeout=5)
+            except Exception:
+                pass
             if self._undo_paginacao:
                 try:
                     self._tentar_comando(self._undo_paginacao, timeout=5)
