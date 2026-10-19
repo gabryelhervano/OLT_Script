@@ -51,6 +51,8 @@ def agora_iso():
 # Configuração (arquivo ini e variáveis de ambiente; sem credenciais fixas)
 # ---------------------------------------------------------------------------
 
+ARQUIVO_CONFIG = "config.ini"
+
 _PADROES_CONFIG = {
     "host": ("OLT_HOST", "127.0.0.1"),
     "porta": ("OLT_PORT", "22"),
@@ -68,15 +70,21 @@ _PADROES_CONFIG = {
 def carregar_configuracao(caminho=None):
     """Carrega a configuração do operador a partir de ini ou variáveis de ambiente.
 
+    Sem caminho informado, usa `config.ini` da pasta atual, se existir.
     Variáveis de ambiente têm precedência sobre o arquivo, permitindo usar o
-    arquivo de exemplo sem credenciais reais.
+    arquivo de exemplo sem credenciais reais. A leitura tolera o BOM que o
+    Bloco de Notas do Windows grava.
     """
+    if caminho is None and os.path.exists(ARQUIVO_CONFIG):
+        caminho = ARQUIVO_CONFIG
     parser = configparser.ConfigParser()
     if caminho and os.path.exists(caminho):
-        parser.read(caminho)
+        parser.read(caminho, encoding="utf-8-sig")
     configuracao = {}
     for chave, (variavel, padrao) in _PADROES_CONFIG.items():
         configuracao[chave] = _variavel(variavel, parser, chave) or padrao
+    configuracao["arquivo"] = caminho if caminho and os.path.exists(caminho) \
+        else ""
     return configuracao
 
 
@@ -1505,6 +1513,16 @@ def _exibir_configuracao(configuracao):
     print("  demais parâmetros são descobertos no estado atual da ONT")
 
 
+def _exibir_origem_configuracao(configuracao):
+    """Mostra de onde veio a configuração, para evitar confusão."""
+    arquivo = configuracao.get("arquivo")
+    if arquivo:
+        print("  config: %s" % arquivo)
+    else:
+        print("  config: nenhum arquivo (usando variáveis de ambiente "
+              "e valores padrão)")
+
+
 def _exibir_passos(resultados):
     passos = []
     for resultado in resultados.values():
@@ -1675,6 +1693,7 @@ def main(argv=None):
         print("modo: DRY-RUN na OLT (somente leitura, nada será alterado)")
     registros, problemas = ler_planilha(argumentos.Arquivo)
     print("planilha: %s" % _resumo_planilha(registros, problemas))
+    _exibir_origem_configuracao(configuracao)
     indice_por_serial, indice_por_usuario = indexar(registros)
     seletor = {"ont_id": argumentos.ont_id, "serial": argumentos.serial}
     if argumentos.testar_ssh:
