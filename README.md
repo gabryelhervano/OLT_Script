@@ -3,7 +3,7 @@
 Script único em Python para automatizar o reprovisionamento de ONTs em OLTs
 Huawei (modelos MA5800, entre outros), utilizando a CLI do equipamento por
 SSH. A sequência de comandos reproduz é a mesma validada na MA5800 com
-versão V100R021; nenhum comando novo foi inventado.
+versão V100R021
 
 ## Estrutura do projeto
 
