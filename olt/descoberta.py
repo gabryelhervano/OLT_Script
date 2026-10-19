@@ -350,9 +350,13 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
     if srvprofile is None and nomes.get("srv"):
         srvprofile = perfis.get("srv", {}).get(nomes["srv"])
     tr069profile = atual.get("tr069profile")
-    if tr069profile is None and nomes.get("linha"):
-        tr069profile = perfis.get("linha", {}).get(nomes["linha"])
     wanprofile = atual.get("wanprofile")
+    # O line-profile em uso vem da linha `ont add`; quando ela não pôde ser
+    # lida (linha truncada pelo terminal), o nome informado pelo
+    # `display ont profile` resolve o identificador.
+    lineprofile_atual = atual.get("lineprofile")
+    if lineprofile_atual is None and nomes.get("linha"):
+        lineprofile_atual = perfis.get("linha", {}).get(nomes["linha"])
     usuario = _campo(campos_ip, "PPPoE username", "Username") or \
         atual.get("usuario") or ""
     vlane = _campo(campos_ip, "ONT manage VLAN", "Manage VLAN") or \
@@ -370,7 +374,7 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
         "vlane": vlane,
         "prioridade": prioridade,
         "configuracao": _campo(campos_ip, "ONT config type", "Config type"),
-        "lineprofile_atual": atual.get("lineprofile"),
+        "lineprofile_atual": lineprofile_atual,
         "srvprofile": srvprofile,
         "tr069profile": tr069profile,
         "wanprofile": wanprofile,
