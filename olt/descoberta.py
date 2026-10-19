@@ -263,35 +263,55 @@ def _consultar_perfil_ont(sessao, interface, porta, ont_id):
     return {}
 
 
-def _consultar_servicos(sessao, interface, porta, ont_id):
-    """Lista os service-ports da ONT; devolve ID, gemport e user-vlan.
+def listar_servicos(sessao):
+    """Lê a listagem de service-ports da OLT.
 
     A listagem `display service-port all` é uma tabela "Switch-Oriented
     Flow List": o índice é o identificador do service-port, F/S/P indica a
-    porta GPON, VPI é o identificador da ONT e VCI é o gemport.
+    porta GPON, VPI é o identificador da ONT e VCI é o gemport. É a mesma
+    tabela para todas as ONTs, por isso é lida uma única vez por execução.
     """
     saida = sessao.executar("display service-port all")
-    alvo = "%s/%d" % (interface, porta)
     servicos = []
     for linha in saida.splitlines():
         encontrado = _PADRAO_SERVICE_PORT.match(linha)
         if not encontrado:
             continue
         valores = encontrado.groupdict()
-        caminho = "%s/%s" % (valores["frame"], valores["porta"])
-        if caminho != alvo:
-            continue
-        if int(valores["vpi"]) != ont_id:
-            continue
         servicos.append({
             "id": int(valores["index"]),
             "vlan": valores["vlan"],
-            "gpon": caminho,
+            "gpon": "%s/%s" % (valores["frame"], valores["porta"]),
             "ont_id": int(valores["vpi"]),
             "gemport": valores["vci"],
             "user-vlan": valores["param"],
         })
     return servicos
+
+
+def _servico_da_ont(servicos, interface, porta, ont_id):
+    """Service-port que atende a ONT, se houver."""
+    alvo = "%s/%d" % (interface, porta)
+    for servico in servicos or []:
+        if servico["gpon"] == alvo and servico["ont_id"] == ont_id:
+            return servico
+    return None
+
+
+def resolver_perfis(sessao, interface, porta, ont_id, estado, config_atual):
+    """Resolve os perfis da ONT pelo nome informado pela OLT.
+
+    O `display ont profile` só é consultado para as ONTs que realmente
+    serão reprovisionadas: nas demais ele não traz informação útil.
+    """
+    perfis = (config_atual or {}).get("perfis", {})
+    nomes = _consultar_perfil_ont(sessao, interface, porta, ont_id)
+    if not estado.get("srvprofile") and nomes.get("srv"):
+        estado["srvprofile"] = perfis.get("srv", {}).get(nomes["srv"])
+    if not estado.get("lineprofile_atual") and nomes.get("linha"):
+        estado["lineprofile_atual"] = perfis.get("linha", {}).get(
+            nomes["linha"])
+    return estado
 
 
 def _campo(campos, *chaves):
@@ -316,7 +336,8 @@ def _mac_util(*fontes):
     return ""
 
 
-def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
+def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
+                    servicos=None):
     """Registra o estado atual da ONT, sem executar nenhum comando de alteração.
 
     Todos os demais valores são descobertos na resposta dos comandos de
@@ -326,9 +347,9 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
     wan_info = sessao.executar(
         "display ont wan-info %s %d %d" % (interface, porta, ont_id))
     ipconfig = _consultar_ipconfig(sessao, interface, porta, ont_id)
-    servicos = _consultar_servicos(
-        sessao, interface, porta, ont_id)
-    servico = servicos[0] if servicos else None
+    if servicos is None:
+        servicos = listar_servicos(sessao)
+    servico = _servico_da_ont(servicos, interface, porta, ont_id)
     campos_wan = _campos(wan_info)
     campos_ip = _campos(ipconfig)
 
@@ -343,18 +364,11 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None):
             "internet": True,
             "wan": True,
         }
-    perfis = (config_atual or {}).get("perfis", {})
-    nomes = _consultar_perfil_ont(sessao, interface, porta, ont_id)
-
+    # O srv-profile e o line-profile em uso vêm da linha `ont add`; quando
+    # ela não pôde ser lida (linha truncada pelo terminal), o nome
+    # informado pelo `display ont profile` resolve o identificador.
     srvprofile = atual.get("srvprofile")
-    if srvprofile is None and nomes.get("srv"):
-        srvprofile = perfis.get("srv", {}).get(nomes["srv"])
-    # O line-profile em uso vem da linha `ont add`; quando ela não pôde ser
-    # lida (linha truncada pelo terminal), o nome informado pelo
-    # `display ont profile` resolve o identificador.
     lineprofile_atual = atual.get("lineprofile")
-    if lineprofile_atual is None and nomes.get("linha"):
-        lineprofile_atual = perfis.get("linha", {}).get(nomes["linha"])
     usuario = _campo(campos_ip, "PPPoE username", "Username") or \
         atual.get("usuario") or ""
     vlane = _campo(campos_ip, "ONT manage VLAN", "Manage VLAN") or \

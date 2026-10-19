@@ -510,9 +510,9 @@ class TestesFluxo(unittest.TestCase):
         self.assertEqual(ont["estado"], "online")
         self.assertEqual(onts[43]["estado"], "offline")
 
-    def test_ont_ilegivel_nao_interrompe_o_card(self):
-        # Sem resposta de leitura, a ONT fica INCONCLUSIVO e as demais do
-        # mesmo card continuam sendo processadas.
+    def test_ont_sem_correspondencia_nao_interrompe_o_card(self):
+        # A ONT 43 não tem correspondência com a planilha: é descartada na
+        # triagem e a ONT 42, do mesmo card, continua sendo processada.
         sessao = script.SessaoSimulada()
         sessao.definir_resposta(
             "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
@@ -565,8 +565,11 @@ class TestesFluxo(unittest.TestCase):
         indice_por_usuario = {"joao": [registro]}
         resultados = orquestrador.executar(
             [registro], indice_por_serial, indice_por_usuario)
+        # Sem correspondência com a planilha, a ONT é descartada na triagem
+        # e nem chega a ser consultada.
         self.assertEqual(
-            resultados["0/1/4/43"]["classe"], script.ESTADO_INCONCLUSIVO)
+            resultados["0/1/4/43"]["classe"],
+            script.IGNORADA_SEM_IDENTIFICADORES)
         self.assertEqual(
             resultados["0/1/4/42"]["classe"], script.PADRAO_1_COMPLETA)
 

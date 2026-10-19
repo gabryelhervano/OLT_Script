@@ -12,10 +12,12 @@ from . import interacao
 from .classificacao import classificar
 from .comandos import montar_passos
 from .configuracao import portas_configuradas
-from .descoberta import (_consultar_configuracao_atual, _consultar_servicos,
-                         capturar_estado, listar_onts, validar_estado_final)
+from .descoberta import (_consultar_configuracao_atual, _servico_da_ont,
+                      capturar_estado, listar_onts, listar_servicos,
+                      resolver_perfis, validar_estado_final)
 from .erros import ErroOperacao
-from .estados import (ESTADO_INCONCLUSIVO, ESTADO_SUCESSO, JA_CONFIGURADA,
+from .estados import (ESTADO_INCONCLUSIVO, ESTADO_SUCESSO,
+                      IGNORADA_SEM_IDENTIFICADORES, JA_CONFIGURADA,
                       PADRAO_1_COMPLETA, PADRAO_2_PPPOE, PADRAO_2_SERIAL)
 from .planilha import _CHAVE_SENHA, _CHAVE_USUARIO
 from .relatorio import (ARQUIVO_REGISTRO, carregar_registro, chave_ont,
@@ -92,6 +94,7 @@ class Orquestrador:
         self.resultados = {}
         self.processados = set()
         self._config_atual = None
+        self._lista_servicos = None
         self.registro = carregar_registro(caminho_registro)
         self.concluidos = set()
         for identificador, info in self.registro.items():
@@ -133,10 +136,21 @@ class Orquestrador:
             identificador = chave_ont(dados)
             if identificador in self.concluidos:
                 continue
+            if self._sem_correspondencia(dados, indice_por_serial,
+                                         indice_por_usuario):
+                # Sem serial nem descrição na planilha, a ONT não entra no
+                # fluxo: as consultas de leitura são caras e não iam mudar
+                # o resultado.
+                self.resultados[identificador] = {
+                    "classe": IGNORADA_SEM_IDENTIFICADORES,
+                    "motivo": "sem correspondência com a planilha",
+                }
+                continue
             try:
                 estado_atual = capturar_estado(
                     self.sessao, dados["interface"], dados["porta"],
-                    dados["ont_id"], self._configuracao_atual())
+                    dados["ont_id"], self._configuracao_atual(),
+                    self._listar_servicos())
             except ErroOperacao as erro:
                 # Uma ONT ilegível não interrompe as demais do card.
                 self.resultados[identificador] = {
@@ -144,10 +158,15 @@ class Orquestrador:
                     "motivo": "estado não identificado: %s" % erro,
                 }
                 continue
+            # Os perfis são resolvidos só para as ONTs que entraram no
+            # fluxo: a consulta `display ont profile` é desnecessária para
+            # as demais.
+            resolver_perfis(
+                self.sessao, dados["interface"], dados["porta"],
+                dados["ont_id"], estado_atual, self._configuracao_atual())
             for campo in ("vlane", "prioridade", "srvprofile",
-                         "tr069profile", "wanprofile", "gemport",
-                         "user_vlan", "service_port", "tr069", "internet",
-                         "wan_config", "native_vlan"):
+                         "lineprofile_atual", "gemport", "user_vlan",
+                         "service_port"):
                 if campo in estado_atual:
                     dados[campo] = estado_atual[campo]
             resultado = self._classificar(
@@ -184,6 +203,16 @@ class Orquestrador:
         if not interacao.confirmar("Executar alterações neste card?"):
             return False
         return True
+
+    def _listar_servicos(self):
+        """Listagem de service-ports da OLT, lida uma vez por execução."""
+        if self._lista_servicos is None:
+            try:
+                self._lista_servicos = listar_servicos(self.sessao)
+            except ErroOperacao as erro:
+                logger.error("leitura dos service-ports falhou: %s", erro)
+                self._lista_servicos = []
+        return self._lista_servicos
 
     def _configuracao_atual(self):
         """Configuração corrente da OLT, lida uma única vez por execução.
@@ -268,6 +297,29 @@ class Orquestrador:
                 "motivo": "falha na execução: %s" % erro,
             }
 
+    def _sem_correspondencia(self, dados, indice_por_serial,
+                            indice_por_usuario):
+        """Indica que a ONT não tem correspondência na planilha.
+
+        A triagem usa o serial e a descrição configurada na ONT, que é o
+        usuário PPPoE. Ela evita as consultas de leitura das ONTs que não
+        entram na campanha.
+        """
+        if not self._filtrar_por_planilha():
+            return False
+        serial = dados.get("serial") or ""
+        descricao = dados.get("descricao") or ""
+        if serial and indice_por_serial.get(serial):
+            return False
+        if descricao and indice_por_usuario.get(descricao):
+            return False
+        return True
+
+    def _filtrar_por_planilha(self):
+        """Indica se a triagem por planilha está ligada."""
+        valor = str(self.configuracao.get("filtrar_por_planilha") or "sim")
+        return valor.strip().lower() in ("1", "sim", "yes", "true")
+
     def _ja_tem_o_perfil_desejado(self, estado_atual):
         """Indica se a ONT já usa o line-profile configurado.
 
@@ -289,7 +341,8 @@ class Orquestrador:
     def _executar(self, dados):
         configuracao = self._montar_configuracao(dados)
         estado_atual = capturar_estado(
-            self.sessao, dados["interface"], dados["porta"], dados["ont_id"])
+            self.sessao, dados["interface"], dados["porta"], dados["ont_id"],
+            self._configuracao_atual(), self._listar_servicos())
         estado_atual["service_port"] = self._service_port_id(
             dados["interface"], dados["porta"], dados["ont_id"])
         if self._ja_estava_configurado(configuracao, estado_atual):
@@ -312,7 +365,8 @@ class Orquestrador:
             self.sessao.executar(comando)
             self.controle.registrar_sucesso()
         estado_final = capturar_estado(
-            self.sessao, dados["interface"], dados["porta"], dados["ont_id"])
+            self.sessao, dados["interface"], dados["porta"], dados["ont_id"],
+            self._configuracao_atual(), self._listar_servicos())
         classe, motivo = validar_estado_final(configuracao, estado_final)
         self.resultados[chave_ont(dados)] = {
             "classe": classe,
@@ -356,7 +410,8 @@ class Orquestrador:
         configuracao = self._montar_configuracao(dados)
         # Revalida o estado atual antes de montar os comandos.
         capturar_estado(
-            self.sessao, dados["interface"], dados["porta"], dados["ont_id"])
+            self.sessao, dados["interface"], dados["porta"], dados["ont_id"],
+            self._configuracao_atual(), self._listar_servicos())
         return montar_passos(
             dados["interface"], configuracao,
             {"service_port": dados.get("service_port")})
@@ -367,10 +422,10 @@ class Orquestrador:
         O valor é usado apenas no `undo service-port`; nenhum identificador
         novo é enviado no comando de criação.
         """
-        servicos = _consultar_servicos(
-            self.sessao, interface, porta, ont_id)
-        if servicos:
-            return servicos[0]["id"]
+        servico = _servico_da_ont(
+            self._listar_servicos(), interface, porta, ont_id)
+        if servico:
+            return servico["id"]
         return None
 
     def _ja_estava_configurado(self, configuracao, estado_atual):
