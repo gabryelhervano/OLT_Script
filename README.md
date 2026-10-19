@@ -26,12 +26,19 @@ O script usa apenas `openpyxl` e `paramiko` além da biblioteca padrão.
 ## Execução
 
 A execução **sempre começa em DRY-RUN**. Sem `--execute`, nenhuma alteração
-é enviada; apenas consultas de leitura são executadas, com a sessão SSH aberta
-quando a configuração permite.
+é enviada: a OLT real é apenas consultada e o script mostra exatamente os
+comandos que seriam executados.
 
 ```bash
-# DRY-RUN: lê a planilha, classifica as ONTs e mostra o que seria feito.
+# DRY-RUN: consulta a OLT, classifica as ONTs e mostra o que seria feito.
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx
+
+# Diagnóstico: mostra o que foi DESCOBERTO em cada ONT (e o que não foi),
+# sem montar nem enviar comando de alteração.
+python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --diagnostico
+
+# Diagnóstico de uma única ONT.
+python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --diagnostico --ont-id 42
 
 # Limita a execução a uma ONT (padrão conservador).
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --limit 1
@@ -42,7 +49,8 @@ python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --limit 1 --report simulac
 # Valida a conexão SSH sem executar nenhuma alteração.
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --test-ssh
 
-# Simulação com ONTs fictícios, para apresentar os três padrões de CPE.
+# Simulação com ONTs fictícios, sem conexão com a OLT.
+python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --mock
 python3 exemplo_simulacao.py
 ```
 

@@ -1274,20 +1274,7 @@ class Orquestrador:
 
     def _portas(self):
         """Portas GPON a consultar; configurável, com todas como padrão."""
-        configuradas = self.configuracao.get("portas")
-        if not configuradas:
-            return list(range(16))
-        portas = []
-        for item in str(configuradas).split(","):
-            item = item.strip()
-            if not item:
-                continue
-            if "-" in item:
-                inicio, fim = item.split("-", 1)
-                portas.extend(range(int(inicio), int(fim) + 1))
-            else:
-                portas.append(int(item))
-        return portas
+        return portas_configuradas(self.configuracao)
 
     def _filtrar(self, onts):
         selecionado = {}
@@ -1509,6 +1496,24 @@ def gravar_resultados(caminho, resultados, configuracao):
     return linhas
 
 
+def portas_configuradas(configuracao):
+    """Portas GPON a consultar; configurável, com todas como padrão."""
+    configuradas = configuracao.get("portas")
+    if not configuradas:
+        return list(range(16))
+    portas = []
+    for item in str(configuradas).split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "-" in item:
+            inicio, fim = item.split("-", 1)
+            portas.extend(range(int(inicio), int(fim) + 1))
+        else:
+            portas.append(int(item))
+    return portas
+
+
 def _confirmar(mensagem):
     print("ATENÇÃO: " + mensagem)
     resposta = input().strip().lower()
@@ -1546,11 +1551,64 @@ def _parse_argumentos(argv):
                       help="valida a conexão SSH sem alterar a OLT")
     parser.add_argument("--mock", action="store_true",
                       help="executa o fluxo com uma OLT simulada")
+    parser.add_argument("--diagnostico", action="store_true",
+                      help="mostra o estado descoberto em cada ONT (só leitura)")
     return parser.parse_args(argv)
 
 
 def _conexao_configurada(configuracao):
     return bool(configuracao["host"]) and configuracao["host"] != "127.0.0.1"
+
+
+def _executar_diagnostico(sessao, configuracao, seletor):
+    """Lê o estado de cada ONT e mostra o que foi descoberto (sem alterar).
+
+    Serve para validar na bancada o que o script enxerga na OLT antes de
+    qualquer execução: nada além de consultas de leitura é enviado.
+    """
+    interface = configuracao["interface"]
+    portas = portas_configuradas(configuracao)
+    onts = listar_onts(sessao, interface, portas)
+    if seletor.get("ont_id") is not None:
+        onts = {chave: ont for chave, ont in onts.items()
+                if chave == seletor["ont_id"]}
+    if seletor.get("serial"):
+        onts = {chave: ont for chave, ont in onts.items()
+                if (ont.get("Serial") or "") == seletor["serial"]}
+    if not onts:
+        print("nenhuma ONT encontrada em %s (portas %s)"
+              % (interface, ",".join(str(p) for p in portas)))
+        return
+    print("ONTs encontradas: %d" % len(onts))
+    try:
+        config_atual = _consultar_configuracao_atual(sessao)
+    except ErroOperacao as erro:
+        print("configuração corrente indisponível: %s" % erro)
+        config_atual = {"perfis": {}, "onts": {}}
+    for ont_id in sorted(onts):
+        ont = onts[ont_id]
+        partes = (ont.get("F/S/P") or "").split("/")
+        porta = int(partes[-1]) if partes[-1].isdigit() else 0
+        print("")
+        print("ONT %d (%s) serial=%s descricao=%s estado=%s"
+              % (ont_id, ont.get("F/S/P"), ont.get("Serial"),
+                 ont.get("Description"), ont.get("estado")))
+        try:
+            estado = capturar_estado(
+                sessao, interface, porta, ont_id, config_atual)
+        except ErroOperacao as erro:
+            print("   INCONCLUSIVO: %s" % erro)
+            continue
+        for campo in ("usuario", "vlane", "prioridade", "srvprofile",
+                      "tr069profile", "wanprofile", "gemport", "user_vlan",
+                      "service_port", "tipo_wan", "status_conexao", "mac"):
+            valor = estado.get(campo)
+            if valor in (None, ""):
+                print("   %-15s: (não identificado)" % campo)
+            else:
+                print("   %-15s: %s" % (campo, valor))
+        for flag in ("native_vlan", "tr069", "internet", "wan_config"):
+            print("   %-15s: %s" % (flag, "sim" if estado.get(flag) else "não"))
 
 
 def main(argv=None):
@@ -1570,25 +1628,40 @@ def main(argv=None):
     executar = argumentos.executar
     if executar:
         print("modo: execução real (haverá confirmação por card)")
+    elif argumentos.mock:
+        print("modo: simulação local (OLT simulada, sem conexão)")
     else:
-        print("modo: simulação (DRY-RUN)")
+        print("modo: DRY-RUN na OLT (somente leitura, nada será alterado)")
     registros, problemas = ler_planilha(argumentos.Arquivo)
     print("planilha: %s" % _resumo_planilha(registros, problemas))
     indice_por_serial, indice_por_usuario = indexar(registros)
+    seletor = {"ont_id": argumentos.ont_id, "serial": argumentos.serial}
     if argumentos.testar_ssh:
         sessao = conectar_ssh(configuracao)
         sessao.fechar()
         print("conexão SSH ok")
-    elif executar:
-        sessao = conectar_ssh(configuracao)
+        print("concluído")
+        return 0
+    if executar or not argumentos.mock:
+        # Mesmo no DRY-RUN a OLT real e consultada; nenhum comando de
+        # alteracao e enviado nesse modo.
+        try:
+            sessao = conectar_ssh(configuracao)
+        except Exception as erro:
+            print("ERRO: nao foi possivel conectar na OLT: %s" % erro)
+            print("     use --mock para rodar sem OLT (dados simulados).")
+            return 1
     else:
         sessao = Simulador()
     try:
+        if argumentos.diagnostico:
+            _executar_diagnostico(sessao, configuracao, seletor)
+            return 0
         orquestrador = Orquestrador(
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=executar,
-            seletor={"ont_id": argumentos.ont_id, "serial": argumentos.serial},
+            seletor=seletor,
         )
         resultados = orquestrador.executar(
             registros, indice_por_serial, indice_por_usuario)
