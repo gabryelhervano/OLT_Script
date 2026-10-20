@@ -22,6 +22,8 @@ versão V100R021.
 | `olt/util.py`, `olt/erros.py`, `olt/interacao.py` | Auxiliares. |
 | `exemplo_simulacao.py` | Executa a simulação com três ONTs ilustrativos (um de cada padrão de CPE). |
 | `testes_reprovisionar.py` | Testes automatizados (sem conexão real). |
+| `restaurar_versao.py` | Lista e restaura versões anteriores do código. |
+| `CHANGELOG.md` | Histórico das versões. |
 | `config_exemplo.ini` | Exemplo de configuração, sem credenciais reais. |
 | `requirements.txt` | Dependências. |
 
@@ -125,6 +127,29 @@ enable = enable
 - A chave do servidor é validada: a OLT precisa estar em `~/.ssh/known_hosts`.
   Se não estiver, acrescente com
   `ssh-keyscan -H <ip-da-olt> >> ~/.ssh/known_hosts`.
+
+## Versionamento e retorno a versões anteriores
+
+O código é versionado no git, com marcas (`v1.0.0`, `v1.1.0`, `v1.2.0`, ...)
+em pontos já validados. O `CHANGELOG.md` resume o que mudou em cada uma.
+
+```bash
+# lista as versões disponíveis
+python3 restaurar_versao.py
+
+# restaura uma versão (o estado atual fica guardado em uma marca antes)
+python3 restaurar_versao.py v1.1.0
+```
+
+Ao restaurar, o script roda a suíte de testes na versão restaurada e avisa
+se ela passou. Para voltar à versão mais recente:
+
+```bash
+python3 restaurar_versao.py --atualizar
+```
+
+O histórico completo continua no GitHub, então qualquer commit também pode
+ser retomado com `git checkout <commit>`.
 
 ## Relatório
 
