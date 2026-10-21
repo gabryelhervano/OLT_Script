@@ -407,8 +407,6 @@ class Orquestrador:
             self.sessao, dados["interface"], dados["porta"], dados["ont_id"],
             self._configuracao_atual(), self._listar_servicos())
         classe, motivo = validar_estado_final(configuracao, estado_final)
-        classe, motivo, estado_final = self._aguardar_conexao(
-            dados, configuracao, classe, motivo, estado_final)
         identificador = chave_ont(dados)
         self.resultados[identificador] = {
             "classe": classe,
@@ -422,31 +420,6 @@ class Orquestrador:
             "estado": _resumo_estado(estado_final),
         }
         self._salvar()
-
-    def _aguardar_conexao(self, dados, configuracao, classe, motivo,
-                          estado_final):
-        """Espera a CPE reconectar antes de dar a execução por concluída.
-
-        A ONT é apagada e recriada, e a CPE leva alguns minutos para
-        renomegar e voltar a autenticar. Sem essa espera, toda execução
-        terminaria como PARCIAL.
-        """
-        if classe == ESTADO_SUCESSO or "conexão" not in motivo:
-            return classe, motivo, estado_final
-        tentativas = int(self.configuracao.get("validacao_tentativas") or 3)
-        intervalo = int(self.configuracao.get("validacao_intervalo") or 30)
-        for tentativa in range(1, tentativas + 1):
-            logger.info("aguardando a CPE reconectar (%d/%d)", tentativa,
-                        tentativas)
-            time.sleep(intervalo)
-            estado_final = capturar_estado(
-                self.sessao, dados["interface"], dados["porta"],
-                dados["ont_id"], self._configuracao_atual(),
-                self._listar_servicos())
-            classe, motivo = validar_estado_final(configuracao, estado_final)
-            if classe == ESTADO_SUCESSO:
-                break
-        return classe, motivo, estado_final
 
     def _salvar(self):
         salvar_registro(self.caminho_registro, self.registro)

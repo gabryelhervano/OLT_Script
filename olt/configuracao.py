@@ -35,8 +35,6 @@ _PADROES_CONFIG = {
     "reprovisionar_ja_configuradas": ("OLT_REPROVISIONAR_JA_CONFIGURADAS", ""),
     "filtrar_por_planilha": ("OLT_FILTRAR_POR_PLANILHA", "sim"),
     "prefixos_serial": ("OLT_PREFIXOS_SERIAL", "HW,4857,57"),
-    "validacao_tentativas": ("OLT_VALIDACAO_TENTATIVAS", "3"),
-    "validacao_intervalo": ("OLT_VALIDACAO_INTERVALO", "30"),
     "portas": ("OLT_PORTAS", "0-15"),
 }
 
