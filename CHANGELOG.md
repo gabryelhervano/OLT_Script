@@ -3,6 +3,11 @@
 Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python3 restaurar_versao.py <versão>`.
 
+## v1.3.4 - 2026-10-21
+
+- O diagnóstico passa a listar os perfis de TR-069 e WAN da OLT, com o nome de
+  cada um, junto do perfil que será aplicado.
+
 ## v1.3.3 - 2026-10-21
 
 - O diagnóstico passa a mostrar os perfis de TR-069 e WAN disponíveis na OLT,

@@ -181,7 +181,7 @@ def _executar_diagnostico(sessao, configuracao, seletor):
               % ("tr069-profile", configuracao["tr069profile"]))
         print("   %-17s: %s (configurado)"
               % ("wan-profile", configuracao["wanprofile"]))
-        _exibir_perfis_da_olt(sessao)
+        _exibir_perfis_da_olt(sessao, configuracao)
 
 
 def _exibir_perfis_da_olt(sessao):

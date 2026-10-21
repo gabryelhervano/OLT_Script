@@ -245,6 +245,27 @@ def _consultar_ipconfig(sessao, interface, porta, ont_id):
     return saida
 
 
+def listar_perfis(sessao):
+    """Perfis de TR-069 e WAN definidos na OLT.
+
+    Os identificadores mudam de OLT para OLT, então listar os perfis
+    disponíveis ajuda a conferir qual ID usar na reconfiguração.
+    """
+    perfis = {"tr069": {}, "wan": {}}
+    for chave, comando in (("tr069", "display ont tr069-server-profile"),
+                            ("wan", "display ont wan-profile all")):
+        try:
+            saida = sessao.executar(comando)
+        except ErroOperacao:
+            continue
+        for linha in saida.splitlines():
+            partes = linha.split()
+            if len(partes) < 2 or not partes[0].isdigit():
+                continue
+            perfis[chave][int(partes[0])] = partes[1]
+    return perfis
+
+
 def _consultar_perfil_ont(sessao, interface, porta, ont_id):
     """Lê o nome dos perfis aplicados à ONT (`display ont profile`).
 
