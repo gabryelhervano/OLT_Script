@@ -181,6 +181,29 @@ def _executar_diagnostico(sessao, configuracao, seletor):
               % ("tr069-profile", configuracao["tr069profile"]))
         print("   %-17s: %s (configurado)"
               % ("wan-profile", configuracao["wanprofile"]))
+        _exibir_perfis_da_olt(sessao)
+
+
+def _exibir_perfis_da_olt(sessao):
+    """Mostra os perfis de TR-069 e WAN disponíveis na OLT.
+
+    Ajuda a conferir qual identificador é o de TR-069 e qual é o de WAN: os
+    números mudam de OLT para OLT.
+    """
+    for comando in ("display ont tr069-server-profile",
+                    "display ont wan-profile"):
+        try:
+            saida = sessao.executar(comando)
+        except ErroOperacao as erro:
+            print("   %-17s: (erro: %s)" % (comando.split()[-1], erro))
+            continue
+        linhas = [linha.strip() for linha in saida.splitlines() if linha.strip()]
+        if len(linhas) <= 3:
+            print("   %-17s: %s" % (comando.split()[-1], " | ".join(linhas)))
+        else:
+            print("   %-17s:" % comando.split()[-1])
+            for linha in linhas:
+                print("      %s" % linha)
 
 
 def _configuracao_atual(sessao):
