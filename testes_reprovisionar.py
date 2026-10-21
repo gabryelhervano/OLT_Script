@@ -247,6 +247,25 @@ RESPOSTA_SERVICE_PORT_DOIS_ONTS = """   INDEX VLAN VLAN     PORT F/ S/ P VPI  VC
 """
 
 
+RESPOSTA_RESUMO_FABRICANTES = """  In port 0/1/4, the total of ONTs are: 3, online: 3
+  ------------------------------------------------------------------------------
+  ONT  Run     Last                Last                Last
+  ID   State   UpTime              DownTime            DownCause
+  ------------------------------------------------------------------------------
+  42   online  2026-10-16 10:51:06 2026-10-16 10:47:01 dying-gasp
+  43   online  2026-10-16 10:51:06 2026-10-16 10:47:01 dying-gasp
+  44   online  2026-10-16 10:51:06 2026-10-16 10:47:01 dying-gasp
+  ------------------------------------------------------------------------------
+  ONT        SN        Type          Distance Rx/Tx power  Description
+  ID                                    (m)      (dBm)
+  ------------------------------------------------------------------------------
+  42  48575443FA70D1B3 EG8145V5-V2      160   -19.70/2.32  cliente42
+  43  5A595845CB03BB44 PX3321-T1        322   -18.38/2.26  cliente43
+  44  414C434CFC65280D NOCLEICODEG1425G 248   -18.41/2.44  cliente44
+  ------------------------------------------------------------------------------
+"""
+
+
 class TestesSessao(unittest.TestCase):
     def test_deteccao_de_prompt(self):
         sessao = script.SessaoSSH({})
@@ -989,6 +1008,81 @@ class TestesFluxo(unittest.TestCase):
         self.assertIn("ont wan-config 4 42 ip-index 0 profile-id 10", comandos)
         self.assertIn(
             "ont port native-vlan 4 42 eth 1 vlan 2551 priority 0", comandos)
+
+    def test_cpe_de_fabricante_suportado_e_descartada(self):
+        # A OLT só conversa com CPEs Huawei: as demais são descartadas e o
+        # fluxo segue para a próxima ONT do card.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_FABRICANTES)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            RESPOSTA_CONFIG_ATUAL)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        for ont_id in (42, 43, 44):
+            sessao.definir_resposta(
+                "display ont wan-info 0/1 4 %d" % ont_id,
+                "  Manage VLAN : 2551\n"
+                "  Manage priority : 5\n"
+                "  Service type : Internet\n"
+                "  IPv4 Connection status : Connected\n")
+            sessao.definir_resposta(
+                "display ont ipconfig 4 %d" % ont_id,
+                "  PPPoE username : cliente%d\n"
+                "  ONT config type : PPPoE\n"
+                "  Manage VLAN : 2551\n"
+                "  ONT manage priority : 5\n" % ont_id)
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=False,
+        )
+        registros = []
+        for ont_id, serial, usuario in ((42, "48575443FA70D1B3", "cliente42"),
+                                        (43, "5A595845CB03BB44", "cliente43"),
+                                        (44, "414C434CFC65280D", "cliente44")):
+            registros.append({
+                "interface": "0/1",
+                "porta": 4,
+                "ont_id": ont_id,
+                "serial": serial,
+                "usuario": usuario,
+                "senha": "1234",
+                "mac": "00:11:22:33:44:55",
+                "estado": "VALIDO",
+            })
+        indice_por_serial = {r["serial"]: [r] for r in registros}
+        indice_por_usuario = {r["usuario"]: [r] for r in registros}
+        resultados = orquestrador.executar(
+            registros, indice_por_serial, indice_por_usuario)
+        # A Huawei (serial em hexadecimal) segue o processo normal.
+        self.assertEqual(
+            resultados["0/1/4/42"]["classe"], script.PADRAO_1_COMPLETA)
+        # ZTE e Nokia são descartadas.
+        for ont_id in (43, 44):
+            info = resultados["0/1/4/%d" % ont_id]
+            self.assertEqual(info["classe"], script.DESCARTA_POR_SERIAL)
+            self.assertIn("serial fora do perfil permitido", info["motivo"])
+        # Nenhum comando de alteração foi enviado para elas.
+        alteracoes = [comando for comando in sessao.comandos
+                      if comando.startswith(("undo", "ont delete", "ont add",
+                                             "ont ipconfig", "service-port v"))]
+        self.assertEqual([c for c in alteracoes if " 43" in c], [])
+        self.assertEqual([c for c in alteracoes if " 44" in c], [])
 
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o

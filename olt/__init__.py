@@ -21,7 +21,8 @@ from .configuracao import carregar_configuracao, portas_configuradas
 from .descoberta import capturar_estado, listar_onts, validar_estado_final
 from .erros import ErroOperacao
 from .estados import (BLOQUEADA_AMBIGUIDADE, BLOQUEADA_DIVERGENCIA,
-                      ESTADO_INCONCLUSIVO, ESTADO_PARCIAL, ESTADO_SUCESSO,
+                      DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
+                      ESTADO_PARCIAL, ESTADO_SUCESSO,
                       IGNORADA_SEM_IDENTIFICADORES, JA_CONFIGURADA,
                       PADRAO_1_COMPLETA, PADRAO_2_PPPOE, PADRAO_2_SERIAL)
 from .orquestrador import ControleExecucao, Orquestrador
@@ -31,12 +32,13 @@ from .relatorio import carregar_registro, chave_ont, gravar_relatorio, \
 from .sessao import SessaoSimulada, SessaoSSH, Simulador, Transporte, \
     conectar_ssh
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 __all__ = [
     "__version__",
     "BLOQUEADA_AMBIGUIDADE",
     "BLOQUEADA_DIVERGENCIA",
+    "DESCARTA_POR_SERIAL",
     "ControleExecucao",
     "ESTADO_INCONCLUSIVO",
     "ESTADO_PARCIAL",

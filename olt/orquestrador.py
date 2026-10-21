@@ -11,14 +11,15 @@ import time
 from . import interacao
 from .classificacao import classificar
 from .comandos import montar_passos
-from .configuracao import portas_configuradas
+from .configuracao import PREFIXOS_SERIAL_PADRAO, portas_configuradas
 from .descoberta import (_consultar_configuracao_atual, _servico_da_ont,
                       capturar_estado, listar_onts, listar_servicos,
                       resolver_perfis, validar_estado_final)
 from .erros import ErroOperacao
-from .estados import (ESTADO_INCONCLUSIVO, ESTADO_SUCESSO,
-                      IGNORADA_SEM_IDENTIFICADORES, JA_CONFIGURADA,
-                      PADRAO_1_COMPLETA, PADRAO_2_PPPOE, PADRAO_2_SERIAL)
+from .estados import (DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
+                      ESTADO_SUCESSO, IGNORADA_SEM_IDENTIFICADORES,
+                      JA_CONFIGURADA, PADRAO_1_COMPLETA, PADRAO_2_PPPOE,
+                      PADRAO_2_SERIAL)
 from .planilha import _CHAVE_SENHA, _CHAVE_USUARIO
 from .relatorio import (ARQUIVO_REGISTRO, carregar_registro, chave_ont,
                        salvar_registro)
@@ -135,6 +136,15 @@ class Orquestrador:
         for dados in onts:
             identificador = chave_ont(dados)
             if identificador in self.concluidos:
+                continue
+            if not self._serial_permitido(dados.get("serial")):
+                # A OLT só conversa com CPEs suportadas (Huawei): as demais
+                # são descartadas e o fluxo segue para a próxima ONT.
+                self.resultados[identificador] = {
+                    "classe": DESCARTA_POR_SERIAL,
+                    "motivo": "serial fora do perfil permitido: %s"
+                              % (dados.get("serial") or "(não informado)"),
+                }
                 continue
             if self._sem_correspondencia(dados, indice_por_serial,
                                          indice_por_usuario):
@@ -296,6 +306,25 @@ class Orquestrador:
                 "classe": ESTADO_INCONCLUSIVO,
                 "motivo": "falha na execução: %s" % erro,
             }
+
+    def _serial_permitido(self, serial):
+        """Indica se a CPE é de um equipamento suportado pela OLT.
+
+        O prefixo do serial é configurável; a comparação ignora maiúsculas
+        e minúsculas. Serial vazio também é descartado, por não ser possível
+        confirmar o equipamento.
+        """
+        configurado = self.configuracao.get("prefixos_serial")
+        if configurado is None:
+            configurado = PREFIXOS_SERIAL_PADRAO
+        prefixos = [item.strip().upper() for item in
+                    str(configurado).split(",") if item.strip()]
+        if not prefixos:
+            return True
+        serial = (serial or "").strip().upper()
+        if not serial:
+            return False
+        return any(serial.startswith(prefixo) for prefixo in prefixos)
 
     def _sem_correspondencia(self, dados, indice_por_serial,
                             indice_por_usuario):

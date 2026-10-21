@@ -3,6 +3,13 @@
 Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python3 restaurar_versao.py <versão>`.
 
+## v1.3.0 - 2026-10-21
+
+- Filtro de CPEs suportadas: ONTs cujo serial não começa com um dos
+  prefixos de `prefixos_serial` (padrão `HW,4857,57`) são descartadas na
+  triagem, com a classe `DESCARTA_POR_SERIAL`, e o fluxo segue para a
+  próxima ONT. O filtro roda antes de qualquer consulta de leitura.
+
 ## v1.2.0 - 2026-10-20
 
 - Versionamento: marcas (`v1.0.0`, `v1.1.0`, `v1.2.0`) e o script

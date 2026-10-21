@@ -70,6 +70,10 @@ operador.
 - A OLT é a origem da lista de ONTs: a planilha fornece as credenciais. As
   consultas caras (`display service-port all`, `display current-configuration`)
   são lidas uma vez por execução e reutilizadas por todas as ONTs.
+- CPEs de equipamentos que a OLT não suporta (prefixo de serial fora do
+  configurado em `prefixos_serial`) são descartadas na triagem, com a classe
+  `DESCARTA_POR_SERIAL`, e o fluxo segue para a próxima ONT. O filtro é
+  aplicado antes de qualquer consulta de leitura.
 - Antes de consultar o estado de uma ONT, a triagem descarta as que não têm
   correspondência na planilha, comparando o serial e a descrição (que é o
   usuário PPPoE). Isso evita as consultas de leitura das ONTs fora da

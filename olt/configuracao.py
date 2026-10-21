@@ -10,6 +10,10 @@ import os
 
 ARQUIVO_CONFIG = "config.ini"
 
+# Prefixos de serial das CPEs suportadas pela OLT (Huawei). A comparação
+# ignora maiúsculas e minúsculas.
+PREFIXOS_SERIAL_PADRAO = "HW,4857,57"
+
 # Chave -> (variável de ambiente, valor padrão).
 _PADROES_CONFIG = {
     "host": ("OLT_HOST", "127.0.0.1"),
@@ -30,6 +34,7 @@ _PADROES_CONFIG = {
     "wanprofile": ("OLT_WANPROFILE", "10"),
     "reprovisionar_ja_configuradas": ("OLT_REPROVISIONAR_JA_CONFIGURADAS", ""),
     "filtrar_por_planilha": ("OLT_FILTRAR_POR_PLANILHA", "sim"),
+    "prefixos_serial": ("OLT_PREFIXOS_SERIAL", "HW,4857,57"),
     "portas": ("OLT_PORTAS", "0-15"),
 }
 
