@@ -57,6 +57,17 @@ class TestesPlanilha(unittest.TestCase):
         registros, _ = script.ler_planilha(self.caminho)
         self.assertEqual(registros[0]["senha"], "0001230")
 
+    def test_mac_aceito_com_ou_sem_traco(self):
+        caminho = self.caminho
+        escrever(caminho, [
+            "cliente,senha123,AC8D-34D9-BD67,HWTC0D3BDDA7",
+            "outro,senha123,28:68:D2:B2:1C:EF,48575443FA70D1B3",
+        ])
+        registros, problemas = script.ler_planilha(caminho)
+        self.assertEqual(len(registros), 2)
+        self.assertEqual(problemas, [])
+        self.assertEqual(registros[0]["mac"], "AC:8D:34:D9:BD:67")
+
     def test_identifica_mac_e_serial_invalidos(self):
         self._escrever([
             "joao,1234,00:11:22:33:44,HWTC00000001",

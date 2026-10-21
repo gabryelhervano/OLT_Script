@@ -23,9 +23,13 @@ _CHAVE_SERIAL = "serial"
 
 _COLUNAS_PADRAO = (_CHAVE_USUARIO, _CHAVE_SENHA, _CHAVE_MAC, _CHAVE_SERIAL)
 
-_PADRAO_MAC = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
+# A OLT mostra o MAC como XXXX-XXXX-XXXX; a planilha costuma usar
+# XX:XX:XX:XX:XX:XX. As duas formas são aceitas.
+_PADRAO_MAC = re.compile(
+    r"^(?:[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}"
+    r"|[0-9A-Fa-f]{4}(?:-[0-9A-Fa-f]{4}){2})$")
 _PADRAO_SERIAL = re.compile(r"^[0-9A-Za-z]{4,20}$")
-_MASCARAS_MAC = frozenset(("ff:ff:ff:ff:ff:ff",))
+_MASCARAS_MAC = frozenset(("ff:ff:ff:ff:ff:ff", "ffffffffffff"))
 _MASCARAS_SERIAL = frozenset(("ffffffffffffffff", "ffff:ffff:ffff:ffff"))
 
 
@@ -79,6 +83,17 @@ def _eh_mac(valor):
     return valor.lower() not in _MASCARAS_MAC
 
 
+def _normalizar_mac(valor):
+    """Deixa o MAC no formato com dois-pontos (XX:XX:XX:XX:XX:XX)."""
+    if not valor or "-" not in valor:
+        return valor
+    grupos = []
+    for parte in valor.split("-"):
+        grupos.extend(parte[indice:indice + 2]
+                       for indice in range(0, len(parte), 2))
+    return ":".join(grupos)
+
+
 def _eh_serial(valor):
     if _PADRAO_SERIAL.match(valor) is None:
         return False
@@ -126,9 +141,11 @@ def _converter_celulas(celulas, atribuicao):
     if atribuicao is None:
         for indice, chave in enumerate(_COLUNAS_PADRAO):
             dicionario[chave] = celulas[indice]
-        return dicionario
-    for indice, chave in atribuicao.items():
-        dicionario[chave] = celulas[indice]
+    else:
+        for indice, chave in atribuicao.items():
+            dicionario[chave] = celulas[indice]
+    if dicionario.get(_CHAVE_MAC):
+        dicionario[_CHAVE_MAC] = _normalizar_mac(dicionario[_CHAVE_MAC])
     return dicionario
 
 
