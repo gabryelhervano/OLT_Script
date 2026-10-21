@@ -31,7 +31,7 @@ logger = logging.getLogger("reprovisionar_olt")
 def _resumo_estado(estado):
     """Campos do estado que ajudam a entender o resultado da execução."""
     campos = ("usuario", "vlane", "prioridade", "gemport", "user_vlan",
-              "service_port", "tipo_wan", "status_conexao", "mac")
+              "service_port", "tipo_wan", "status_conexao")
     return {campo: estado.get(campo) for campo in campos
             if estado.get(campo)}
 
@@ -401,7 +401,7 @@ class Orquestrador:
         for comando in passos:
             if comando.startswith("display"):
                 continue
-            self.sessao.executar(comando)
+            self.sessao.alterar(comando)
             self.controle.registrar_sucesso()
         estado_final = capturar_estado(
             self.sessao, dados["interface"], dados["porta"], dados["ont_id"],

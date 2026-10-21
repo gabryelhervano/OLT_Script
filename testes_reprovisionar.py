@@ -1136,6 +1136,79 @@ class TestesFluxo(unittest.TestCase):
         self.assertEqual([c for c in alteracoes if " 43" in c], [])
         self.assertEqual([c for c in alteracoes if " 44" in c], [])
 
+    def test_comando_recusado_pela_olt_e_apontado(self):
+        # Se a OLT recusar um comando de alteração, a ONT fica INCONCLUSIVA
+        # com o motivo do erro, em vez de passar despercebida.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            RESPOSTA_CONFIG_ATUAL)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        # a OLT recusa o `ont wan-config`
+        sessao.definir_resposta(
+            "ont wan-config 4 42 ip-index 0 profile-id 10",
+            "  Command:\n          ont wan-config 4 42 ip-index 0 profile-id 10\n"
+            "    Failure: The ONT can not support\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=True,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resposta_original = interacao.confirmar
+        interacao.confirmar = lambda mensagem: True
+        try:
+            resultados = orquestrador.executar(
+                [registro], indice_por_serial, indice_por_usuario)
+        finally:
+            interacao.confirmar = resposta_original
+        info = resultados["0/1/4/42"]
+        self.assertEqual(info["classe"], script.ESTADO_INCONCLUSIVO)
+        self.assertIn("can not support", info["motivo"])
+        # O `service-port` não foi criado, porque o fluxo parou no erro.
+        self.assertFalse([comando for comando in sessao.comandos
+                          if comando.startswith("service-port v")])
+
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o
         # srvprofile: nada pode ser assumido, então a ONT fica INCONCLUSIVO

@@ -25,6 +25,30 @@ _UNDO_PAGINACAO = {
 }
 
 
+# Respostas em que a OLT recusa o comando. As consultas de leitura podem
+# falhar assim sem que a ONT esteja com erro (por exemplo, uma ONT sem WAN),
+# por isso a checagem vale para os comandos de alteração.
+MARCAS_DE_ERRO = (
+    "failure:",
+    "error:",
+    "% unknown command",
+    "% unrecognized command",
+    "% incomplete command",
+    "% parameter error",
+    "% wrong parameter",
+    "% too many parameters",
+)
+
+
+def erro_na_resposta(saida):
+    """Devolve a linha de erro da resposta da CLI, se houver."""
+    for linha in (saida or "").splitlines():
+        limpa = linha.strip().lower()
+        if any(marca in limpa for marca in MARCAS_DE_ERRO):
+            return linha.strip()
+    return None
+
+
 class Transporte:
     """Interface mínima usada pela camada SSH; permite simulação em testes."""
 
@@ -61,6 +85,14 @@ class SessaoSimulada(Transporte):
     def executar(self, comando):
         self.comandos.append(comando)
         return self.respostas.get(comando, RESPOSTA_OK)
+
+    def alterar(self, comando):
+        """Envia um comando de alteração, recusando respostas de erro."""
+        saida = self.executar(comando)
+        erro = erro_na_resposta(saida)
+        if erro:
+            raise ErroOperacao("a OLT recusou o comando: %s" % erro)
+        return saida
 
     def fechar(self):
         self.conectada = False
@@ -144,6 +176,18 @@ class SessaoSSH:
             return list(erro.allowed_types)
         except paramiko.AuthenticationException:
             return []
+
+    def alterar(self, comando):
+        """Envia um comando de alteração, recusando respostas de erro.
+
+        Sem essa checagem, um comando rejeitado pela OLT passaria
+        despercebido e a ONT ficaria mal configurada.
+        """
+        saida = self.executar(comando)
+        erro = erro_na_resposta(saida)
+        if erro:
+            raise ErroOperacao("a OLT recusou o comando: %s" % erro)
+        return saida
 
     def _entrar_em_enable(self):
         """Entra no modo privilegiado (`enable`), exigido por parte das CLIs.

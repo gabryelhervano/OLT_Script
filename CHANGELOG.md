@@ -3,6 +3,14 @@
 Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python3 restaurar_versao.py <versão>`.
 
+## v1.4.0 - 2026-10-21
+
+- Os comandos de alteração agora são verificados: quando a OLT recusa um
+  comando, a execução para ali e a ONT fica `INCONCLUSIVO` com o motivo do
+  erro. Antes, a recusa passava despercebida.
+- O MAC deixou de fazer parte do diagnóstico e do resumo do estado: o
+  fluxo usa apenas o serial (e o usuário) para associar a CPE.
+
 ## v1.3.4 - 2026-10-21
 
 - O diagnóstico passa a listar os perfis de TR-069 e WAN da OLT, com o nome de
