@@ -3,6 +3,14 @@
 Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python3 restaurar_versao.py <versão>`.
 
+## v1.4.1 - 2026-10-21
+
+- A validação final passou a esperar a CPE reconectar: a ONT é apagada e
+  recriada, e a CPE leva alguns minutos para voltar a autenticar. Sem a
+  espera, toda execução terminava como `PARCIAL`. As tentativas e o
+  intervalo são configuráveis (`validacao_tentativas`,
+  `validacao_intervalo`).
+
 ## v1.4.0 - 2026-10-21
 
 - Os comandos de alteração agora são verificados: quando a OLT recusa um
