@@ -21,10 +21,19 @@ from .estados import (DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
                       JA_CONFIGURADA, PADRAO_1_COMPLETA, PADRAO_2_PPPOE,
                       PADRAO_2_SERIAL)
 from .planilha import _CHAVE_SENHA, _CHAVE_USUARIO
-from .relatorio import (ARQUIVO_REGISTRO, carregar_registro, chave_ont,
-                       salvar_registro)
+from .util import agora_iso
+from .relatorio import (ARQUIVO_REGISTRO, carregar_registro,
+                       chave_ont, salvar_registro)
 
 logger = logging.getLogger("reprovisionar_olt")
+
+
+def _resumo_estado(estado):
+    """Campos do estado que ajudam a entender o resultado da execução."""
+    campos = ("usuario", "vlane", "prioridade", "gemport", "user_vlan",
+              "service_port", "tipo_wan", "status_conexao", "mac")
+    return {campo: estado.get(campo) for campo in campos
+            if estado.get(campo)}
 
 
 class ControleExecucao:
@@ -96,6 +105,7 @@ class Orquestrador:
         self.processados = set()
         self._config_atual = None
         self._lista_servicos = None
+        self.caminho_registro = caminho_registro
         self.registro = carregar_registro(caminho_registro)
         self.concluidos = set()
         for identificador, info in self.registro.items():
@@ -118,7 +128,7 @@ class Orquestrador:
                 return self.resultados
             for dados in onts:
                 self._processar(dados, indice_por_serial, indice_por_usuario)
-        salvar_registro(ARQUIVO_REGISTRO, self.registro)
+        salvar_registro(self.caminho_registro, self.registro)
         return self.resultados
 
     def _agrupar(self, onts):
@@ -397,14 +407,22 @@ class Orquestrador:
             self.sessao, dados["interface"], dados["porta"], dados["ont_id"],
             self._configuracao_atual(), self._listar_servicos())
         classe, motivo = validar_estado_final(configuracao, estado_final)
-        self.resultados[chave_ont(dados)] = {
+        identificador = chave_ont(dados)
+        self.resultados[identificador] = {
             "classe": classe,
             "motivo": motivo,
+            "estado": _resumo_estado(estado_final),
+        }
+        self.registro[identificador] = {
+            "classe": classe,
+            "motivo": motivo,
+            "data": agora_iso(),
+            "estado": _resumo_estado(estado_final),
         }
         self._salvar()
 
     def _salvar(self):
-        salvar_registro(ARQUIVO_REGISTRO, self.registro)
+        salvar_registro(self.caminho_registro, self.registro)
 
     def _montar_configuracao(self, dados):
         configuracao = {

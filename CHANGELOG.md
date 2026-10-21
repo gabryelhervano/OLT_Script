@@ -3,6 +3,15 @@
 Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python3 restaurar_versao.py <versão>`.
 
+## v1.3.1 - 2026-10-21
+
+- O registro persistente passou a gravar o resultado de cada ONT (antes o
+  arquivo ficava vazio e a execução repetia o que já estava concluído).
+- O relatório em CSV ganhou as colunas `fsp`, `ont_id` e `estado`, com o
+  estado final lido na OLT, e a saída do terminal mostra esse estado quando
+  o resultado não é `SUCESSO`.
+- O MAC da planilha passou a ser aceito no formato da OLT (XXXX-XXXX-XXXX).
+
 ## v1.3.0 - 2026-10-21
 
 - Filtro de CPEs suportadas: ONTs cujo serial não começa com um dos

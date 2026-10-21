@@ -7,6 +7,7 @@ comandos de alteração nunca são enviados no DRY-RUN.
 
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -15,6 +16,10 @@ import olt as script
 from olt import interacao
 from olt.descoberta import (_consultar_configuracao_atual,
                           _consultar_perfil_ont)
+
+
+REGISTRO_TESTE = os.path.join(tempfile.gettempdir(),
+                              "registro_teste_reprovisionar.json")
 
 
 def escrever(path, linhas):
@@ -296,6 +301,8 @@ class TestesSessao(unittest.TestCase):
 
 class TestesFluxo(unittest.TestCase):
     def setUp(self):
+        if os.path.exists(REGISTRO_TESTE):
+            os.remove(REGISTRO_TESTE)
         self.sessao = script.SessaoSimulada()
         self.sessao.definir_resposta(
             "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
@@ -386,6 +393,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=self.sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         resultados = orquestrador.executar(
             [], self.por_serial(), self.por_usuario())
@@ -424,6 +432,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=self.sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
@@ -487,6 +496,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=self.sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
@@ -580,6 +590,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
@@ -643,6 +654,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
@@ -732,6 +744,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=True,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
@@ -803,6 +816,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
@@ -864,6 +878,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
@@ -931,6 +946,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
@@ -998,6 +1014,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
@@ -1061,6 +1078,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
         )
         registros = []
         for ont_id, serial, usuario in ((42, "48575443FA70D1B3", "cliente42"),
@@ -1137,6 +1155,7 @@ class TestesFluxo(unittest.TestCase):
             configuracao=configuracao,
             sessao=sessao,
             executar_alteracoes=True,
+            caminho_registro=REGISTRO_TESTE,
         )
         registro = {
             "interface": "0/1",
