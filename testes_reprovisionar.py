@@ -283,6 +283,29 @@ RESPOSTA_RESUMO_FABRICANTES = """  In port 0/1/4, the total of ONTs are: 3, onli
 
 
 class TestesSessao(unittest.TestCase):
+    def test_exibicao_dos_resultados(self):
+        import io
+        import contextlib
+
+        import reprovisionar_olt as cli
+
+        resultados = {
+            "0/2/15/1": {
+                "classe": "PARCIAL",
+                "motivo": "conexão não estabilizada",
+                "estado": {"usuario": "marialc", "status_conexao": "Connecting"},
+            },
+            "0/2/15/2": {"classe": "SUCESSO", "motivo": ""},
+        }
+        saida = io.StringIO()
+        with contextlib.redirect_stdout(saida):
+            cli._exibir_detalhes(resultados)
+        texto = saida.getvalue()
+        self.assertIn("0/2/15/1 -> PARCIAL", texto)
+        self.assertIn("motivo: conexão não estabilizada", texto)
+        self.assertIn("estado final na OLT:", texto)
+        self.assertIn("0/2/15/2 -> SUCESSO", texto)
+
     def test_deteccao_de_prompt(self):
         sessao = script.SessaoSSH({})
         self.assertTrue(sessao._prompt_no_buffer("OLT_MA5800-SANTA_RITA#"))

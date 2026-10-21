@@ -3,6 +3,11 @@
 Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python3 restaurar_versao.py <versão>`.
 
+## v1.3.2 - 2026-10-21
+
+- Corrigido o erro na exibição dos resultados, que interrompia a saída no
+  fim da execução (os comandos já tinham sido enviados).
+
 ## v1.3.1 - 2026-10-21
 
 - O registro persistente passou a gravar o resultado de cada ONT (antes o

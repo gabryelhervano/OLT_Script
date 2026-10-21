@@ -53,7 +53,7 @@ def _resumo_planilha(registros, problemas):
 
 def _exibir_detalhes(resultados):
     for identificador, resultado in sorted(resultados.items()):
-        print("  %s -> %s" % (identador, resultado["classe"]))
+        print("  %s -> %s" % (identificador, resultado["classe"]))
         if resultado.get("motivo"):
             print("      motivo: %s" % resultado["motivo"])
         estado = resultado.get("estado")
