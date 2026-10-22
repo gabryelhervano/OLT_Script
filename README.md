@@ -56,6 +56,11 @@ python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --diagnostico --ont-id 42
 # comandos de alteração que seriam enviados apenas com --execute).
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --roteiro --serial HWTC0D3BDDA7
 
+# Modo debug: exibe o terminal da OLT ao vivo — cada comando enviado e a
+# resposta crua da CLI, com o rótulo de leitura/alteração. As senhas aparecem
+# mascaradas. Vale no DRY-RUN e no --execute.
+python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --debug --serial HWTC0D3BDDA7
+
 # Limita a execução a uma ONT (padrão conservador).
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --limit 1
 

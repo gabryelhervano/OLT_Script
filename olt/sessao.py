@@ -13,7 +13,7 @@ import time
 import paramiko
 
 from .erros import ErroOperacao
-from .util import resumo_texto
+from .util import mascarar_valor, resumo_texto
 
 logger = logging.getLogger("reprovisionar_olt")
 
@@ -74,25 +74,38 @@ class SessaoSimulada(Transporte):
     alteração nunca são enviados no DRY-RUN.
     """
 
-    def __init__(self):
+    def __init__(self, monitor=None):
         self.comandos = []
         self.respostas = {}
         self.conectada = True
+        self.monitor = monitor
 
     def definir_resposta(self, comando, saida):
         self.respostas[comando] = saida
 
     def executar(self, comando):
-        self.comandos.append(comando)
-        return self.respostas.get(comando, RESPOSTA_OK)
+        return self._trocar(comando, alteracao=False)
 
     def alterar(self, comando):
         """Envia um comando de alteração, recusando respostas de erro."""
-        saida = self.executar(comando)
+        saida = self._trocar(comando, alteracao=True)
         erro = erro_na_resposta(saida)
         if erro:
             raise ErroOperacao("a OLT recusou o comando: %s" % erro)
         return saida
+
+    def _trocar(self, comando, alteracao):
+        self.comandos.append(comando)
+        saida = self.respostas.get(comando, RESPOSTA_OK)
+        self._monitorar(comando, saida, alteracao)
+        return saida
+
+    def _monitorar(self, comando, saida, alteracao):
+        """Repassa a troca ao modo debug, com as senhas mascaradas."""
+        if self.monitor is None:
+            return
+        self.monitor(mascarar_valor(comando), mascarar_valor(saida),
+                     alteracao)
 
     def fechar(self):
         self.conectada = False
@@ -101,11 +114,12 @@ class SessaoSimulada(Transporte):
 class SessaoSSH:
     """Conexão SSH real com o CLI Huawei, com leitura controlada e timeout."""
 
-    def __init__(self, configuracao):
+    def __init__(self, configuracao, monitor=None):
         self.configuracao = configuracao
         self.conectada = False
         self.buffer = ""
         self.comandos = []
+        self.monitor = monitor
         self._undo_paginacao = ""
         self._saida_parcial = ""
 
@@ -183,11 +197,28 @@ class SessaoSSH:
         Sem essa checagem, um comando rejeitado pela OLT passaria
         despercebido e a ONT ficaria mal configurada.
         """
-        saida = self.executar(comando)
+        saida = self._enviar_ler(comando, alteracao=True)
         erro = erro_na_resposta(saida)
         if erro:
             raise ErroOperacao("a OLT recusou o comando: %s" % erro)
         return saida
+
+    def _monitorar(self, comando, saida, alteracao):
+        """Repassa a troca ao modo debug, com as senhas mascaradas.
+
+        Além do `password "..."` dos comandos, o valor literal das senhas
+        também é substituído: uma CLI pode ecoar o que foi digitado.
+        """
+        if self.monitor is None:
+            return
+        comando_limpo = mascarar_valor(comando)
+        saida_limpa = mascarar_valor(saida)
+        for segredo in (self.configuracao.get("senha"),
+                        self.configuracao.get("senha_enable")):
+            if segredo:
+                comando_limpo = comando_limpo.replace(segredo, "********")
+                saida_limpa = saida_limpa.replace(segredo, "********")
+        self.monitor(comando_limpo, saida_limpa, alteracao)
 
     def _entrar_em_enable(self):
         """Entra no modo privilegiado (`enable`), exigido por parte das CLIs.
@@ -220,6 +251,7 @@ class SessaoSSH:
                     "a OLT pediu senha de enable (OLT_SENHA_ENABLE)")
             self._enviar(senha + self.terminador)
             saida = self._ler_ate(self._prompt_no_buffer, 10)
+        self._monitorar(comando, saida, alteracao=False)
         return saida
 
     @property
@@ -322,11 +354,12 @@ class SessaoSSH:
         """
         self._enviar_comando(comando, enter_extra=enter_extra)
         try:
-            return self._ler_ate(self._prompt_no_buffer, timeout)
+            saida = self._ler_ate(self._prompt_no_buffer, timeout)
         except ErroOperacao:
-            parcial = self._saida_parcial
+            saida = self._saida_parcial
             self._aguardar_ociosa()
-            return parcial
+        self._monitorar(comando, saida, alteracao=False)
+        return saida
 
     def _aguardar_ociosa(self, espera_max=15, silencio=1.0):
         """Aguarda a CLI terminar o processamento, sem enviar nada."""
@@ -347,13 +380,19 @@ class SessaoSSH:
         return "".join(partes)
 
     def executar(self, comando):
+        return self._enviar_ler(comando, alteracao=False)
+
+    def _enviar_ler(self, comando, alteracao):
+        """Envia um comando e devolve a resposta crua da CLI."""
         if not self.conectada:
             raise ErroOperacao("sessão SSH indisponível")
         comando = comando.strip()
         if not comando:
             return ""
         self._enviar_comando(comando)
-        return self._ler_ate(self._prompt_no_buffer, self.timeout)
+        saida = self._ler_ate(self._prompt_no_buffer, self.timeout)
+        self._monitorar(comando, saida, alteracao)
+        return saida
 
     def _enviar(self, texto):
         """Envia o texto à CLI caractere a caractere.
@@ -461,27 +500,18 @@ class SessaoSSH:
         self.conectada = False
 
 
-def conectar_ssh(configuracao):
-    sessao = SessaoSSH(configuracao)
+def conectar_ssh(configuracao, monitor=None):
+    sessao = SessaoSSH(configuracao, monitor=monitor)
     sessao.conectar()
     return sessao
 
 
-class Simulador:
+class Simulador(SessaoSimulada):
     """Substitui a conexão SSH para o modo `--mock` e para os testes.
 
-    Registra todos os comandos enviados, sem tocar em equipamentos reais.
+    Herda da sessão simulada: registra todos os comandos enviados, aceita o
+    monitor do modo debug e não toca em equipamentos reais.
     """
-
-    def __init__(self):
-        self.comandos = []
-
-    def executar(self, comando):
-        self.comandos.append(comando)
-        return RESPOSTA_OK
-
-    def fechar(self):
-        pass
 
 
 def _comando_desconhecido(saida):

@@ -324,6 +324,119 @@ class TestesSessao(unittest.TestCase):
         self.assertIn('password "********"', mascarado)
         self.assertNotIn("segredo", mascarado)
 
+    def test_modo_debug_exibe_o_terminal_da_olt(self):
+        # O monitor recebe cada troca: comando, resposta crua e se era uma
+        # alteração. A senha é mascarada no comando e na resposta (a CLI
+        # ecoa o que recebeu).
+        trocas = []
+        sessao = script.SessaoSimulada(
+            monitor=lambda comando, saida, alteracao: trocas.append(
+                (comando, saida, alteracao)))
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  IPv4 Connection status : Connected")
+        sessao.definir_resposta(
+            'ont ipconfig 4 42 pppoe vlan 2551 password "1234"',
+            '  Command:\n'
+            '          ont ipconfig 4 42 pppoe vlan 2551 password "1234"\n'
+            '   ----------------------------------------------------------------')
+        sessao.executar("display ont wan-info 0/1 4 42")
+        sessao.alterar('ont ipconfig 4 42 pppoe vlan 2551 password "1234"')
+        self.assertEqual(len(trocas), 2)
+        comando, saida, alteracao = trocas[0]
+        self.assertEqual(comando, "display ont wan-info 0/1 4 42")
+        self.assertIn("Connected", saida)
+        self.assertFalse(alteracao)
+        comando, saida, alteracao = trocas[1]
+        self.assertTrue(alteracao)
+        self.assertIn('password "********"', comando)
+        self.assertIn('password "********"', saida)
+        self.assertNotIn("1234", comando)
+        self.assertNotIn("1234", saida)
+
+    def test_monitor_do_cli_mostra_rotulo_e_resposta(self):
+        import io
+        import contextlib
+
+        import reprovisionar_olt as cli
+
+        saida = io.StringIO()
+        with contextlib.redirect_stdout(saida):
+            cli._monitor_terminal("display version", "  Huawei V100R021",
+                                  alteracao=False)
+            cli._monitor_terminal("ont delete 4 42", "", alteracao=True)
+        texto = saida.getvalue()
+        self.assertIn("[leitura] display version", texto)
+        self.assertIn("  Huawei V100R021", texto)
+        self.assertIn("[ALTERAÇÃO] ont delete 4 42", texto)
+        self.assertIn("(sem resposta)", texto)
+
+    def test_argumento_debug(self):
+        import reprovisionar_olt as cli
+
+        argumentos = cli._parse_argumentos(["--file", "x.xlsx", "--debug"])
+        self.assertTrue(argumentos.debug)
+        self.assertFalse(
+            cli._parse_argumentos(["--file", "x.xlsx"]).debug)
+
+    def test_mock_aceita_comandos_de_alteracao(self):
+        # `--mock --execute` usa o Simulador: sem `alterar` a execução
+        # simulada quebrava com AttributeError.
+        sessao = script.Simulador()
+        sessao.alterar("ont delete 4 42")
+        self.assertIn("ont delete 4 42", sessao.comandos)
+        sessao.definir_resposta("comando ruim", "  Failure: recusado")
+        with self.assertRaises(script.ErroOperacao):
+            sessao.alterar("comando ruim")
+
+    def test_diagnostico_lista_os_perfis_com_o_nome(self):
+        import io
+        import contextlib
+
+        import reprovisionar_olt as cli
+
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont tr069-server-profile all",
+            "  Profile-id  Profile-name       Binding times\n"
+            "  ---- --------------------------------------------------\n"
+            "  10          anlix-flashman     1\n")
+        sessao.definir_resposta(
+            "display ont wan-profile all",
+            "  Profile-ID  Profile-name       Binding times\n"
+            "  ---- --------------------------------------------------\n"
+            "  1           internet_tr069     2\n")
+        configuracao = {"tr069profile": 10, "wanprofile": 1}
+        saida = io.StringIO()
+        with contextlib.redirect_stdout(saida):
+            cli._exibir_perfis_da_olt(sessao, configuracao)
+        texto = saida.getvalue()
+        self.assertIn("tr069-profile    : 10 (anlix-flashman)", texto)
+        self.assertIn("wan-profile      : 1 (internet_tr069)", texto)
+
+    def test_diagnostico_aponta_quando_o_perfil_nao_existe(self):
+        import io
+        import contextlib
+
+        import reprovisionar_olt as cli
+
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont tr069-server-profile all",
+            "  10          anlix-flashman     1\n")
+        sessao.definir_resposta(
+            "display ont wan-profile all",
+            "  1           internet_tr069     2\n")
+        configuracao = {"tr069profile": 3, "wanprofile": 1}
+        saida = io.StringIO()
+        with contextlib.redirect_stdout(saida):
+            cli._exibir_perfis_da_olt(sessao, configuracao)
+        texto = saida.getvalue()
+        # O ID configurado não existe: a lista real é mostrada.
+        self.assertIn("tr069-profile    : 3", texto)
+        self.assertIn("disponíveis", texto)
+        self.assertIn("10 (anlix-flashman)", texto)
+
 
 class TestesFluxo(unittest.TestCase):
     def setUp(self):

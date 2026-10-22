@@ -20,7 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from olt.comandos import exibir_comandos  # noqa: E402
 from olt.configuracao import (carregar_configuracao,  # noqa: E402
                               portas_configuradas)
-from olt.descoberta import capturar_estado, listar_onts  # noqa: E402
+from olt.descoberta import (capturar_estado, listar_onts,  # noqa: E402
+                            listar_perfis)
 from olt.erros import ErroOperacao  # noqa: E402
 from olt.interacao import configurar_codificacao  # noqa: E402
 from olt.orquestrador import Orquestrador  # noqa: E402
@@ -112,6 +113,20 @@ def _exibir_roteiro(sessao, resultados):
         print("  (nenhuma ONT classificada para reprovisionamento)")
 
 
+def _monitor_terminal(comando, saida, alteracao):
+    """Exibe a troca com a OLT no modo debug: comando e resposta crua.
+
+    As senhas já vêm mascaradas da sessão. A resposta é mostrada exatamente
+    como a CLI devolveu (inclui o eco do que a OLT recebeu), que é o que
+    permite enxergar um comando truncado ou uma sessão dessincronizada.
+    """
+    rotulo = "ALTERAÇÃO" if alteracao else "leitura"
+    print("", flush=True)
+    print("[%s] %s" % (rotulo, comando), flush=True)
+    texto = (saida or "").rstrip()
+    print(texto if texto else "(sem resposta)", flush=True)
+
+
 def _exibir_contagem(resultados):
     contagem = {}
     for resultado in resultados.values():
@@ -178,26 +193,30 @@ def _executar_diagnostico(sessao, configuracao, seletor):
         _exibir_perfis_da_olt(sessao, configuracao)
 
 
-def _exibir_perfis_da_olt(sessao):
-    """Mostra os perfis de TR-069 e WAN disponíveis na OLT.
+def _exibir_perfis_da_olt(sessao, configuracao):
+    """Mostra os perfis de TR-069 e WAN da OLT e o que será aplicado.
 
-    Ajuda a conferir qual identificador é o de TR-069 e qual é o de WAN: os
-    números mudam de OLT para OLT.
+    Os identificadores mudam de OLT para OLT: listar os perfis permite
+    conferir qual ID é o de TR-069 e qual é o de WAN.
     """
-    for comando in ("display ont tr069-server-profile",
-                    "display ont wan-profile"):
+    perfis = listar_perfis(sessao)
+    for chave, rotulo in (("tr069", "tr069-profile"),
+                          ("wan", "wan-profile")):
+        configurado = configuracao.get("%sprofile" % chave)
         try:
-            saida = sessao.executar(comando)
-        except ErroOperacao as erro:
-            print("   %-17s: (erro: %s)" % (comando.split()[-1], erro))
-            continue
-        linhas = [linha.strip() for linha in saida.splitlines() if linha.strip()]
-        if len(linhas) <= 3:
-            print("   %-17s: %s" % (comando.split()[-1], " | ".join(linhas)))
+            identificador = int(configurado)
+        except (TypeError, ValueError):
+            identificador = -1
+        lista = perfis.get(chave) or {}
+        nome = lista.get(identificador)
+        if nome:
+            print("   %-17s: %s (%s)" % (rotulo, configurado, nome))
         else:
-            print("   %-17s:" % comando.split()[-1])
-            for linha in linhas:
-                print("      %s" % linha)
+            print("   %-17s: %s" % (rotulo, configurado))
+        if not nome and lista:
+            # O ID configurado não existe na OLT: mostrar o que existe.
+            print("   %-17s: %s" % ("disponíveis", ", ".join(
+                "%d (%s)" % item for item in sorted(lista.items()))))
 
 
 def _configuracao_atual(sessao):
@@ -265,22 +284,25 @@ def _parse_argumentos(argv):
     parser.add_argument("--roteiro", action="store_true",
                         help="mostra a transcrição completa de comandos "
                              "(leituras enviadas e alterações planejadas)")
+    parser.add_argument("--debug", action="store_true",
+                        help="mostra o terminal da OLT: cada comando enviado "
+                             "e a resposta crua da CLI (senhas mascaradas)")
     parser.add_argument("--versao", action="store_true",
                         help="mostra a versão e sai")
     return parser.parse_args(argv)
 
 
-def _abrir_sessao(configuracao, executar, simular):
+def _abrir_sessao(configuracao, executar, simular, monitor=None):
     """Abre a sessão com a OLT.
 
     Mesmo no DRY-RUN a OLT real é consultada; nenhum comando de alteração
     é enviado nesse modo. Com `--mock` a sessão é simulada e não há
-    conexão.
+    conexão. `monitor` é o observador do modo `--debug`.
     """
     if simular:
-        return Simulador()
+        return Simulador(monitor=monitor)
     try:
-        return conectar_ssh(configuracao)
+        return conectar_ssh(configuracao, monitor=monitor)
     except Exception as erro:
         print("ERRO: nao foi possivel conectar na OLT: %s" % erro)
         if "known_hosts" in str(erro):
@@ -329,6 +351,9 @@ def main(argv=None):
         print("modo: simulação local (OLT simulada, sem conexão)")
     else:
         print("modo: DRY-RUN na OLT (somente leitura, nada será alterado)")
+    monitor = _monitor_terminal if argumentos.debug else None
+    if monitor:
+        print("modo debug: terminal da OLT exibido (senhas mascaradas)")
 
     registros, problemas = ler_planilha(argumentos.arquivo)
     print("planilha: %s" % _resumo_planilha(registros, problemas))
@@ -337,7 +362,8 @@ def main(argv=None):
     seletor = {"ont_id": argumentos.ont_id, "serial": argumentos.serial}
 
     if argumentos.testar_ssh:
-        sessao = _abrir_sessao(configuracao, executar, argumentos.mock)
+        sessao = _abrir_sessao(configuracao, executar, argumentos.mock,
+                               monitor=monitor)
         try:
             print("conexão SSH ok")
             _executar_teste_cli(sessao, configuracao)
@@ -346,7 +372,8 @@ def main(argv=None):
         print("concluído")
         return 0
 
-    sessao = _abrir_sessao(configuracao, executar, argumentos.mock)
+    sessao = _abrir_sessao(configuracao, executar, argumentos.mock,
+                           monitor=monitor)
     try:
         if argumentos.diagnostico:
             _executar_diagnostico(sessao, configuracao, seletor)

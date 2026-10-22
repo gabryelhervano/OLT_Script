@@ -250,19 +250,33 @@ def listar_perfis(sessao):
     Os identificadores mudam de OLT para OLT, então listar os perfis
     disponíveis ajuda a conferir qual ID usar na reconfiguração.
     """
+    candidatos = {
+        "tr069": ("display ont tr069-server-profile all",
+                  "display ont tr069-server-profile"),
+        "wan": ("display ont wan-profile all",),
+    }
     perfis = {"tr069": {}, "wan": {}}
-    for chave, comando in (("tr069", "display ont tr069-server-profile"),
-                            ("wan", "display ont wan-profile all")):
-        try:
-            saida = sessao.executar(comando)
-        except ErroOperacao:
-            continue
-        for linha in saida.splitlines():
-            partes = linha.split()
-            if len(partes) < 2 or not partes[0].isdigit():
+    for chave, comandos in candidatos.items():
+        for comando in comandos:
+            try:
+                saida = sessao.executar(comando)
+            except ErroOperacao:
                 continue
-            perfis[chave][int(partes[0])] = partes[1]
+            encontrados = _listagem_de_perfis(saida)
+            perfis[chave].update(encontrados)
+            if encontrados:
+                break
     return perfis
+
+
+def _listagem_de_perfis(saida):
+    """Interpreta a listagem `Profile-ID  Profile-name  Binding times`."""
+    encontrados = {}
+    for linha in (saida or "").splitlines():
+        partes = linha.split()
+        if len(partes) >= 2 and partes[0].isdigit():
+            encontrados[int(partes[0])] = partes[1]
+    return encontrados
 
 
 def _consultar_perfil_ont(sessao, interface, porta, ont_id):

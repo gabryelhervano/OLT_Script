@@ -3,6 +3,23 @@
 Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python3 restaurar_versao.py <versão>`.
 
+## v1.6.0 - 2026-10-22
+
+- Novo modo `--debug`: exibe o terminal da OLT ao vivo, com o comando enviado
+  (rotulado como `leitura` ou `ALTERAÇÃO`) e a resposta crua da CLI, tal como
+  a OLT devolveu. As senhas continuam mascaradas no comando e na resposta,
+  porque a CLI ecoa o que recebeu; os valores literais das senhas do
+  `config.ini` também são substituídos. Vale no DRY-RUN, no `--execute` e no
+  `--test-ssh`, na OLT real e no `--mock`.
+- Corrigido o `--diagnostico`: a rotina que mostra os perfis de TR-069 e WAN
+  era chamada com dois argumentos e definida com um, então o modo travava com
+  `TypeError` assim que encontrava uma ONT.
+- Corrigido o `--mock --execute`: o `Simulador` não tinha o método `alterar`
+  que o orquestrador chama e a simulação de execução falhava com
+  `AttributeError`. Ele passou a herdar da sessão simulada usada nos testes.
+- A listagem de perfis tenta `display ont tr069-server-profile all` antes da
+  forma simples, no mesmo formato do `wan-profile all` que a MA5800 exige.
+
 ## v1.5.0 - 2026-10-21
 
 - A validação final foi removida. Agora a ONT é `SUCESSO` quando a sequência
