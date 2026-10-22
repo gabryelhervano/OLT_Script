@@ -33,6 +33,7 @@ _PADROES_CONFIG = {
     "tr069profile": ("OLT_TR069PROFILE", "1"),
     "wanprofile": ("OLT_WANPROFILE", "10"),
     "reprovisionar_ja_configuradas": ("OLT_REPROVISIONAR_JA_CONFIGURADAS", ""),
+    "reexecutar": ("OLT_REEXECUTAR", ""),
     "filtrar_por_planilha": ("OLT_FILTRAR_POR_PLANILHA", "sim"),
     "prefixos_serial": ("OLT_PREFIXOS_SERIAL", "HW,4857,57"),
     "portas": ("OLT_PORTAS", "0-15"),

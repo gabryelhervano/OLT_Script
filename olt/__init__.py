@@ -24,7 +24,8 @@ from .estados import (BLOQUEADA_AMBIGUIDADE, BLOQUEADA_DIVERGENCIA,
                       DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
                       ESTADO_SUCESSO,
                       IGNORADA_SEM_IDENTIFICADORES, JA_CONFIGURADA,
-                      PADRAO_1_COMPLETA, PADRAO_2_PPPOE, PADRAO_2_SERIAL)
+                      JA_CONCLUIDA, PADRAO_1_COMPLETA, PADRAO_2_PPPOE,
+                      PADRAO_2_SERIAL)
 from .orquestrador import ControleExecucao, Orquestrador
 from .planilha import indexar, ler_planilha, resumo_planilha
 from .relatorio import carregar_registro, chave_ont, gravar_relatorio, \
@@ -32,7 +33,7 @@ from .relatorio import carregar_registro, chave_ont, gravar_relatorio, \
 from .sessao import SessaoSimulada, SessaoSSH, Simulador, Transporte, \
     conectar_ssh
 
-__version__ = "1.6.0"
+__version__ = "1.7.0"
 
 __all__ = [
     "__version__",
@@ -45,6 +46,7 @@ __all__ = [
     "ErroOperacao",
     "IGNORADA_SEM_IDENTIFICADORES",
     "JA_CONFIGURADA",
+    "JA_CONCLUIDA",
     "Orquestrador",
     "PADRAO_1_COMPLETA",
     "PADRAO_2_PPPOE",

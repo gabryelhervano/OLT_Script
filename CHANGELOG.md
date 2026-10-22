@@ -4,6 +4,16 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.7.0 - 2026-10-22
+
+- Uma ONT registrada como concluída deixava de aparecer na saída: ela era
+  pulada em silêncio e o script terminava sem nenhuma linha de resultado,
+  dando a impressão de nada ter sido feito. Agora aparece como
+  `JA_CONCLUIDA`, com a data gravada no `registro_operacoes.json`.
+- Novo argumento `--reexecutar` (ou `reexecutar` / `OLT_REEXECUTAR` na
+  configuração): reprovisiona também as ONTs que o registro marca como
+  concluídas, sem precisar apagar o registro.
+
 ## v1.6.0 - 2026-10-22
 
 - Novo modo `--debug`: exibe o terminal da OLT ao vivo, com o comando enviado

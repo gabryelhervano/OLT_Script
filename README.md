@@ -103,6 +103,22 @@ Para executar alterações reais são exigidos todos os seguintes:
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --execute --limit 1
 ```
 
+### Registro de execuções
+
+Toda ONT que termina a sequência sem erro é gravada em
+`registro_operacoes.json` com a data da execução. Numa execução seguinte ela
+aparece como `JA_CONCLUIDA`, com a data, e não recebe comandos de novo: é o
+que evita que uma execução interrompida repita o trabalho já feito.
+
+Para repetir de propósito (bancada, ajuste de perfil, nova planilha), use
+`--reexecutar`:
+
+```bash
+python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --execute --serial HWTC0D3BDDA7 --reexecutar
+```
+
+Também dá para apagar a entrada da ONT do `registro_operacoes.json`.
+
 ## Configuração
 
 A conexão e os perfis usados vêm de variáveis de ambiente ou de um arquivo INI

@@ -1399,6 +1399,167 @@ class TestesFluxo(unittest.TestCase):
         self.assertEqual(
             sessao.comandos.count("display ont ipconfig 4 42"), 1)
 
+    def _registrar_concluida(self):
+        """Grava a ONT 0/1/4/42 como SUCESSO no registro de execuções."""
+        import json
+
+        with open(REGISTRO_TESTE, "w", encoding="utf-8") as arquivo:
+            json.dump({
+                "0/1/4/42": {
+                    "classe": "SUCESSO",
+                    "motivo": "",
+                    "data": "2026-10-22T14:47:26",
+                },
+            }, arquivo)
+
+    def test_ont_ja_concluida_e_mostrada_em_vez_de_sumir(self):
+        # Uma ONT registrada como SUCESSO não é reprovisionada de novo — mas
+        # o motivo aparece na saída: sem isso a ONT simplesmente some do
+        # relatório e parece que o script não fez nada.
+        self._registrar_concluida()
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            RESPOSTA_CONFIG_ATUAL)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=True,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resposta_original = interacao.confirmar
+        interacao.confirmar = lambda mensagem: True
+        try:
+            resultados = orquestrador.executar(
+                [registro], indice_por_serial, indice_por_usuario)
+        finally:
+            interacao.confirmar = resposta_original
+        info = resultados["0/1/4/42"]
+        self.assertEqual(info["classe"], script.JA_CONCLUIDA)
+        self.assertIn("2026-10-22T14:47:26", info["motivo"])
+        self.assertIn("--reexecutar", info["motivo"])
+        # Nenhum comando de alteração foi enviado.
+        self.assertFalse([comando for comando in sessao.comandos
+                          if comando.startswith(("ont delete", "ont add",
+                                                 "service-port v"))])
+
+    def test_reexecutar_repete_a_ont_concluida(self):
+        self._registrar_concluida()
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            RESPOSTA_CONFIG_ATUAL)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
+            "reexecutar": "true",
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=True,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resposta_original = interacao.confirmar
+        interacao.confirmar = lambda mensagem: True
+        try:
+            resultados = orquestrador.executar(
+                [registro], indice_por_serial, indice_por_usuario)
+        finally:
+            interacao.confirmar = resposta_original
+        info = resultados["0/1/4/42"]
+        self.assertEqual(info["classe"], script.ESTADO_SUCESSO)
+        # A sequência foi aplicada de novo.
+        self.assertTrue([comando for comando in sessao.comandos
+                         if comando.startswith("ont delete")])
+
+    def test_argumento_reexecutar(self):
+        import reprovisionar_olt as cli
+
+        argumentos = cli._parse_argumentos(
+            ["--file", "x.xlsx", "--reexecutar"])
+        self.assertTrue(argumentos.reexecutar)
+        self.assertFalse(
+            cli._parse_argumentos(["--file", "x.xlsx"]).reexecutar)
+
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o
         # srvprofile: nada pode ser assumido, então a ONT fica INCONCLUSIVO

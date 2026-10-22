@@ -287,6 +287,9 @@ def _parse_argumentos(argv):
     parser.add_argument("--debug", action="store_true",
                         help="mostra o terminal da OLT: cada comando enviado "
                              "e a resposta crua da CLI (senhas mascaradas)")
+    parser.add_argument("--reexecutar", action="store_true",
+                        help="reprovisiona também as ONTs que o registro "
+                             "(registro_operacoes.json) marca como concluídas")
     parser.add_argument("--versao", action="store_true",
                         help="mostra a versão e sai")
     return parser.parse_args(argv)
@@ -341,6 +344,8 @@ def main(argv=None):
     configuracao["maximo"] = argumentos.limite
     configuracao["atraso"] = argumentos.atraso
     configuracao["pausa"] = argumentos.pausa
+    if argumentos.reexecutar:
+        configuracao["reexecutar"] = "true"
     if argumentos.tempo_maximo:
         configuracao["tempo_maximo"] = argumentos.tempo_maximo
 

@@ -18,7 +18,7 @@ from .descoberta import (_consultar_configuracao_atual, _servico_da_ont,
 from .erros import ErroOperacao
 from .estados import (DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
                       ESTADO_SUCESSO, IGNORADA_SEM_IDENTIFICADORES,
-                      JA_CONFIGURADA, PADRAO_1_COMPLETA, PADRAO_2_PPPOE,
+                      JA_CONFIGURADA, JA_CONCLUIDA, PADRAO_1_COMPLETA, PADRAO_2_PPPOE,
                       PADRAO_2_SERIAL)
 from .planilha import _CHAVE_SENHA, _CHAVE_USUARIO
 from .util import agora_iso
@@ -100,9 +100,10 @@ class Orquestrador:
         self.caminho_registro = caminho_registro
         self.registro = carregar_registro(caminho_registro)
         self.concluidos = set()
-        for identificador, info in self.registro.items():
-            if info.get("classe") == ESTADO_SUCESSO:
-                self.concluidos.add(identificador)
+        if not self._reexecutar():
+            for identificador, info in self.registro.items():
+                if info.get("classe") == ESTADO_SUCESSO:
+                    self.concluidos.add(identificador)
         self.seletor = seletor or {}
 
     def executar(self, registros, indice_por_serial, indice_por_usuario):
@@ -138,6 +139,16 @@ class Orquestrador:
         for dados in onts:
             identificador = chave_ont(dados)
             if identificador in self.concluidos:
+                # Registrada como SUCESSO numa execução anterior: o registro
+                # evita repetir o trabalho, mas o motivo é mostrado para não
+                # parecer que a ONT simplesmente sumiu.
+                anterior = self.registro.get(identificador) or {}
+                self.resultados[identificador] = {
+                    "classe": JA_CONCLUIDA,
+                    "motivo": "reprovisionada em %s (registro); use "
+                              "--reexecutar para repetir"
+                              % (anterior.get("data") or "data desconhecida"),
+                }
                 continue
             if not self._serial_permitido(dados.get("serial")):
                 # A OLT só conversa com CPEs suportadas (Huawei): as demais
@@ -349,6 +360,11 @@ class Orquestrador:
     def _filtrar_por_planilha(self):
         """Indica se a triagem por planilha está ligada."""
         valor = str(self.configuracao.get("filtrar_por_planilha") or "sim")
+        return valor.strip().lower() in ("1", "sim", "yes", "true")
+
+    def _reexecutar(self):
+        """Indica se o operador pediu para repetir ONTs já concluídas."""
+        valor = str(self.configuracao.get("reexecutar") or "")
         return valor.strip().lower() in ("1", "sim", "yes", "true")
 
     def _ja_tem_o_perfil_desejado(self, estado_atual):

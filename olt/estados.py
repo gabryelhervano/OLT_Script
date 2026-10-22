@@ -23,3 +23,7 @@ DESCARTA_POR_SERIAL = "DESCARTA_POR_SERIAL"
 
 # A ONT já está com o line-profile desejado: não há o que reprovisionar.
 JA_CONFIGURADA = "JA_CONFIGURADA"
+
+# A ONT consta no registro como reprovisionada: nada a repetir, a menos que
+# o operador peça a reexecução.
+JA_CONCLUIDA = "JA_CONCLUIDA"
