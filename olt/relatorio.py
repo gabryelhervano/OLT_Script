@@ -36,7 +36,7 @@ def chave_ont(registro):
 
 CABECHAS_RELATO = [
     "data", "olt", "fsp", "ont_id", "serial", "classe", "metodo",
-    "estado", "etapa", "consultas", "validacoes", "tempo_ms", "motivo",
+    "etapa", "consultas", "validacoes", "tempo_ms", "motivo",
     "executou", "observacoes",
 ]
 

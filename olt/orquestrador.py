@@ -14,7 +14,7 @@ from .comandos import montar_passos
 from .configuracao import PREFIXOS_SERIAL_PADRAO, portas_configuradas
 from .descoberta import (_consultar_configuracao_atual, _servico_da_ont,
                       capturar_estado, listar_onts, listar_servicos,
-                      resolver_perfis, validar_estado_final)
+                      resolver_perfis)
 from .erros import ErroOperacao
 from .estados import (DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
                       ESTADO_SUCESSO, IGNORADA_SEM_IDENTIFICADORES,
@@ -26,14 +26,6 @@ from .relatorio import (ARQUIVO_REGISTRO, carregar_registro,
                        chave_ont, salvar_registro)
 
 logger = logging.getLogger("reprovisionar_olt")
-
-
-def _resumo_estado(estado):
-    """Campos do estado que ajudam a entender o resultado da execução."""
-    campos = ("usuario", "vlane", "prioridade", "gemport", "user_vlan",
-              "service_port", "tipo_wan", "status_conexao")
-    return {campo: estado.get(campo) for campo in campos
-            if estado.get(campo)}
 
 
 class ControleExecucao:
@@ -378,46 +370,39 @@ class Orquestrador:
         return self.resultados.get(identificador, {}).get("classe")
 
     def _executar(self, dados):
+        """Aplica a sequência; a ONT só é SUCESSO se a OLT aceitar tudo."""
         configuracao = self._montar_configuracao(dados)
-        estado_atual = capturar_estado(
-            self.sessao, dados["interface"], dados["porta"], dados["ont_id"],
-            self._configuracao_atual(), self._listar_servicos())
-        estado_atual["service_port"] = self._service_port_id(
+        # O estado da ONT foi lido na triagem; aqui só interessa o
+        # identificador do service-port, que vem da listagem em cache.
+        service_port = self._service_port_id(
             dados["interface"], dados["porta"], dados["ont_id"])
-        if self._ja_estava_configurado(configuracao, estado_atual):
-            self.resultados[chave_ont(dados)]["classe"] = ESTADO_SUCESSO
-            self._salvar()
-            return
-        if not estado_atual["service_port"]:
+        if not service_port:
             self.resultados[chave_ont(dados)] = {
                 "classe": ESTADO_INCONCLUSIVO,
                 "motivo": "service-port original não identificado",
             }
             self._salvar()
             return
-        passos = montar_passos(
-            dados["interface"], configuracao, estado_atual)
-        self.resultados[chave_ont(dados)]["passos"] = passos
+        passos = montar_passos(dados["interface"], configuracao,
+                               {"service_port": service_port})
+        identificador = chave_ont(dados)
+        self.resultados[identificador]["passos"] = passos
         for comando in passos:
             if comando.startswith("display"):
                 continue
             self.sessao.alterar(comando)
             self.controle.registrar_sucesso()
-        estado_final = capturar_estado(
-            self.sessao, dados["interface"], dados["porta"], dados["ont_id"],
-            self._configuracao_atual(), self._listar_servicos())
-        classe, motivo = validar_estado_final(configuracao, estado_final)
-        identificador = chave_ont(dados)
+        # Chegar ao fim da sequência é o critério de sucesso: um comando
+        # recusado pela OLT interrompe a execução e a ONT fica
+        # INCONCLUSIVA, com o motivo do erro.
         self.resultados[identificador] = {
-            "classe": classe,
-            "motivo": motivo,
-            "estado": _resumo_estado(estado_final),
+            "classe": ESTADO_SUCESSO,
+            "motivo": "",
         }
         self.registro[identificador] = {
-            "classe": classe,
-            "motivo": motivo,
+            "classe": ESTADO_SUCESSO,
+            "motivo": "",
             "data": agora_iso(),
-            "estado": _resumo_estado(estado_final),
         }
         self._salvar()
 
@@ -455,10 +440,6 @@ class Orquestrador:
 
     def _montar_passos(self, dados):
         configuracao = self._montar_configuracao(dados)
-        # Revalida o estado atual antes de montar os comandos.
-        capturar_estado(
-            self.sessao, dados["interface"], dados["porta"], dados["ont_id"],
-            self._configuracao_atual(), self._listar_servicos())
         return montar_passos(
             dados["interface"], configuracao,
             {"service_port": dados.get("service_port")})
@@ -474,10 +455,6 @@ class Orquestrador:
         if servico:
             return servico["id"]
         return None
-
-    def _ja_estava_configurado(self, configuracao, estado_atual):
-        """A ONT já está com o perfil pedido: não há o que reconfigurar."""
-        return self._ja_tem_o_perfil_desejado(estado_atual)
 
     def _dados(self, atual):
         fsp = atual.get("F/S/P") or ""

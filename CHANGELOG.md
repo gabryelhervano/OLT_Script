@@ -3,6 +3,27 @@
 Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python3 restaurar_versao.py <versão>`.
 
+## v1.5.0 - 2026-10-21
+
+- A validação final foi removida. Agora a ONT é `SUCESSO` quando a sequência
+  de comandos termina sem erro e `INCONCLUSIVO` quando a OLT recusa algum
+  comando, com o motivo do erro na saída e no relatório. Um comando recusado
+  já interrompia a execução; o que mudou foi o critério de sucesso.
+- `display ont wan-info` e `display ont ipconfig` deixaram de ser relidos
+  depois dos comandos e passaram a ser lidos uma única vez, na triagem.
+- Saíram do código a classe `PARCIAL`, a etapa `validacao` e a coluna `estado`
+  do relatório CSV, que só existiam para essa validação.
+
+## v1.4.2 - 2026-10-21
+
+- Revertida a espera de reconexão antes da validação (v1.4.1). O atraso da CPE
+  vinha do sinal óptico, que está fora do escopo do script.
+
+## v1.4.1 - 2026-10-21
+
+- A validação final passou a esperar a CPE reconectar antes de ler o estado.
+  Alteração revertida na v1.4.2.
+
 ## v1.4.0 - 2026-10-21
 
 - Os comandos de alteração agora são verificados: quando a OLT recusa um

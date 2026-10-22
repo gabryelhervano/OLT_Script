@@ -18,11 +18,11 @@ from .comandos import (comando_configurar_internet, comando_configurar_pppoe,
                        comando_criar_ont, comando_criar_service_port,
                        comando_native_vlan, exibir_comandos, montar_passos)
 from .configuracao import carregar_configuracao, portas_configuradas
-from .descoberta import capturar_estado, listar_onts, validar_estado_final
+from .descoberta import capturar_estado, listar_onts
 from .erros import ErroOperacao
 from .estados import (BLOQUEADA_AMBIGUIDADE, BLOQUEADA_DIVERGENCIA,
                       DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
-                      ESTADO_PARCIAL, ESTADO_SUCESSO,
+                      ESTADO_SUCESSO,
                       IGNORADA_SEM_IDENTIFICADORES, JA_CONFIGURADA,
                       PADRAO_1_COMPLETA, PADRAO_2_PPPOE, PADRAO_2_SERIAL)
 from .orquestrador import ControleExecucao, Orquestrador
@@ -32,7 +32,7 @@ from .relatorio import carregar_registro, chave_ont, gravar_relatorio, \
 from .sessao import SessaoSimulada, SessaoSSH, Simulador, Transporte, \
     conectar_ssh
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 __all__ = [
     "__version__",
@@ -41,7 +41,6 @@ __all__ = [
     "DESCARTA_POR_SERIAL",
     "ControleExecucao",
     "ESTADO_INCONCLUSIVO",
-    "ESTADO_PARCIAL",
     "ESTADO_SUCESSO",
     "ErroOperacao",
     "IGNORADA_SEM_IDENTIFICADORES",
@@ -76,5 +75,4 @@ __all__ = [
     "portas_configuradas",
     "resumo_planilha",
     "salvar_registro",
-    "validar_estado_final",
 ]

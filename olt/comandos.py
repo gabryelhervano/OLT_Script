@@ -154,14 +154,6 @@ def comando_criar_service_port(configuracao):
     )
 
 
-def comando_exibir_wan_info(interface, porta, ont_id):
-    return "display ont wan-info %s %d %d" % (interface, porta, ont_id)
-
-
-def comando_exibir_ipconfig(porta, ont_id):
-    return "display ont ipconfig %d %d" % (porta, ont_id)
-
-
 def exibir_comandos(comandos):
     """Devolve os comandos com a senha mascarada, para exibição."""
     return [mascarar_valor(comando) for comando in comandos]
@@ -190,8 +182,6 @@ def montar_passos(interface, configuracao, estado_original):
     passos.append(comando_configurar_wan(configuracao))
     passos.append(comando_sair_interface())
     passos.append(comando_criar_service_port(configuracao))
-    passos.append(comando_exibir_wan_info(interface, porta, ont_id))
-    passos.append(comando_exibir_ipconfig(porta, ont_id))
     return passos
 
 

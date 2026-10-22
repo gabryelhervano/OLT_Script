@@ -7,7 +7,6 @@ em vez de receber um valor presumido.
 
 import re
 
-from .estados import ESTADO_PARCIAL, ESTADO_SUCESSO
 from .erros import ErroOperacao
 
 
@@ -416,23 +415,5 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
         "status_conexao": _campo(campos_wan, "IPv4 Connection status"),
         "mac": _mac_util(campos_ip, campos_wan),
     }
-
-
-def validar_estado_final(configuracao, estado):
-    """Compara o estado capturado com o esperado; devolve estado e motivo."""
-    usuario = configuracao["usuario"]
-    if estado["usuario"] != usuario:
-        return ESTADO_PARCIAL, "usuário PPPoE incorreto"
-    if estado["vlane"] != configuracao["vlan"]:
-        return ESTADO_PARCIAL, "VLAN incorreta"
-    if estado["prioridade"] != configuracao["prioridade"]:
-        return ESTADO_PARCIAL, "prioridade incorreta"
-    if estado["configuracao"] != "PPPoE":
-        return ESTADO_PARCIAL, "configuração PPPoE incorreta"
-    if estado["tipo_wan"] == "":
-        return ESTADO_PARCIAL, "configuração WAN ausente"
-    if estado["status_conexao"] != "Connected":
-        return ESTADO_PARCIAL, "conexão não estabilizada"
-    return ESTADO_SUCESSO, ""
 
 

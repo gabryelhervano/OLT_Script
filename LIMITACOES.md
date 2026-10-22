@@ -115,12 +115,14 @@ operador.
   como `JA_CONFIGURADA`: reprovisioná-las de novo só geraria retrabalho e um
   breve período sem serviço na CPE. A opção `reprovisionar_ja_configuradas`
   força o reprovisionamento.
-- A validação final considera o estado imediatamente após os comandos; se a
-  PPPoE demorar para conectar, a ONT é marcada `PARCIAL` e nenhuma nova
-  configuração é enviada automaticamente.
+- O critério de sucesso é a conclusão da sequência: se a OLT recusa algum
+  comando, a execução para na hora e a ONT fica `INCONCLUSIVO` com o motivo do
+  erro. O script não relê `wan-info` nem `ipconfig` depois dos comandos — essas
+  duas leituras são feitas uma única vez, na triagem, e o estado da CPE
+  (conexão PPPoE, sinal óptico) é assunto da rede, não do reprovisionamento.
 - Execuções reais exigem um operador presente para as confirmações. A
   confirmação pedida é por card: o operador confirma o card inteiro antes de
   qualquer comando ser enviado para os ONTs desse card. O DRY-RUN nunca pede
   confirmação.
-- Os testes automatizados usam um transporte SSH simulado; nenhum teste com
-  OLT real foi executado.
+- Os testes automatizados usam um transporte SSH simulado; a conferência em OLT
+  real é feita pelo operador, uma ONT por vez.

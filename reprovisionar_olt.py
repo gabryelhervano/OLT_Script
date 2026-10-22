@@ -18,7 +18,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from olt.comandos import exibir_comandos  # noqa: E402
-from olt.estados import ESTADO_SUCESSO  # noqa: E402
 from olt.configuracao import (carregar_configuracao,  # noqa: E402
                               portas_configuradas)
 from olt.descoberta import capturar_estado, listar_onts  # noqa: E402
@@ -56,11 +55,6 @@ def _exibir_detalhes(resultados):
         print("  %s -> %s" % (identificador, resultado["classe"]))
         if resultado.get("motivo"):
             print("      motivo: %s" % resultado["motivo"])
-        estado = resultado.get("estado")
-        if estado and resultado["classe"] != ESTADO_SUCESSO:
-            print("      estado final na OLT: %s"
-                  % " | ".join("%s=%s" % (chave, valor)
-                               for chave, valor in estado.items()))
 
 
 def _exibir_configuracao(configuracao):
@@ -391,9 +385,6 @@ def _gravar_resultados(caminho, resultados, configuracao):
             "fsp": "/".join(partes[:-1]),
             "ont_id": partes[-1],
             "classe": resultado["classe"],
-            "estado": resultado.get("estado") and
-            " | ".join("%s=%s" % (chave, valor)
-                       for chave, valor in resultado["estado"].items()) or "",
             "motivo": resultado.get("motivo") or "",
             "observacoes": resultado.get("observacoes") or "",
         })
