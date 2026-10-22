@@ -1,7 +1,8 @@
 # Registro de alterações
 
 Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
-voltar a uma delas: `python3 restaurar_versao.py <versão>`.
+voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
+`python3`).
 
 ## v1.6.0 - 2026-10-22
 

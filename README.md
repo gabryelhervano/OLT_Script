@@ -37,6 +37,10 @@ O script usa apenas `openpyxl` e `paramiko` além da biblioteca padrão.
 
 ## Execução
 
+> **Windows:** os exemplos usam `python3`/`pip3` (Linux/macOS). No Windows,
+> troque por `python`/`pip` — o `python3` do console é um atalho da
+> Microsoft Store e devolve *"Python was not found"*.
+
 A execução **sempre começa em DRY-RUN**. Sem `--execute`, nenhuma alteração
 é enviada: a OLT real é apenas consultada e o script mostra exatamente os
 comandos que seriam executados.
