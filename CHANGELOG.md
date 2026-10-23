@@ -4,6 +4,21 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.9.0 - 2026-10-23
+
+- A prioridade do `ont ipconfig` passa a vir do `config.ini`
+  (`prioridade = ...`, variável `OLT_PRIORIDADE`), e não mais do estado lido
+  na ONT. O valor descoberto não era número em quase nenhuma CPE — o campo
+  devolvido por `display ont ipconfig` varia entre elas — e travava a
+  operação inteira com `prioridade inválido`.
+- Sem `prioridade` na configuração, o script responde com a mensagem do que
+  falta **antes de conectar na OLT**: a OLT penaliza login, então um erro de
+  configuração não deve custar uma conexão. `--diagnostico` e `--test-ssh`
+  dispensam o valor, porque não reconfiguram a ONT.
+- `--diagnostico` mostra a prioridade configurada logo abaixo da VLAN da OLT,
+  e o resumo do roteiro passa a listar `prioridade (configurável)` junto com
+  os perfis.
+
 ## v1.8.0 - 2026-10-23
 
 - A VLAN passa a vir de uma leitura única da OLT (`display vlan all`): é a

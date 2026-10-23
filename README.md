@@ -124,9 +124,12 @@ Também dá para apagar a entrada da ONT do `registro_operacoes.json`.
 A conexão e os perfis usados vêm de variáveis de ambiente ou de um arquivo INI
 (`--config`). Veja `config_exemplo.ini` para a lista completa; nenhum valor
 real é necessário para o modo DRY-RUN. São configuráveis o line-profile
-(`ont-lineprofile-id`), o perfil TR-069 (`ont tr069-server-config`) e o perfil
-WAN (`ont wan-config`); prioridade, gemport e o srv-profile são descobertos
-no estado atual da ONT a cada execução. A VLAN vem de uma leitura única da
+(`ont-lineprofile-id`), o perfil TR-069 (`ont tr069-server-config`), o perfil
+WAN (`ont wan-config`) e a prioridade de gerência (`ont ipconfig`); gemport e
+o srv-profile são descobertos no estado atual da ONT a cada execução. Sem
+`prioridade` no arquivo o script para antes de abrir a sessão e diz o que
+falta — a OLT penaliza login, então o erro de configuração não custa uma
+conexão. A VLAN vem de uma leitura única da
 OLT (`display vlan all`): é a VLAN com mais service-ports — a que tem mais
 CPEs conectadas — e é aplicada em todos os comandos (`ont ipconfig`,
 `native-vlan`, `service-port` e `user-vlan`), para que toda CPE receba a

@@ -450,7 +450,7 @@ class Orquestrador:
             "descricao": dados.get("descricao") or dados["usuario"],
             "lineprofile": self.configuracao["lineprofile"],
             "vlan": dados["vlane"],
-            "prioridade": dados["prioridade"],
+            "prioridade": self.configuracao.get("prioridade"),
             "srvprofile": dados["srvprofile"],
             "tr069profile": self.configuracao.get("tr069profile"),
             "wanprofile": self.configuracao.get("wanprofile"),
@@ -460,7 +460,7 @@ class Orquestrador:
             "user_vlan": dados.get("user_vlan") or dados["vlane"],
             "service_vlan": dados.get("service_vlan") or dados["vlane"],
         }
-        for campo in ("vlan", "prioridade", "srvprofile", "gemport",
+        for campo in ("vlan", "srvprofile", "gemport",
                       "user_vlan", "service_vlan"):
             if not configuracao[campo]:
                 raise ErroOperacao(
@@ -469,6 +469,9 @@ class Orquestrador:
             if not configuracao[campo]:
                 raise ErroOperacao(
                     "perfil não configurado: %s" % campo)
+        if not configuracao["prioridade"]:
+            raise ErroOperacao(
+                "prioridade não configurada no config.ini")
         return configuracao
 
     def _montar_passos(self, dados):

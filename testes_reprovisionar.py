@@ -583,6 +583,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -627,13 +628,78 @@ class TestesFluxo(unittest.TestCase):
         # O line-profile configurável difere do restante do estado descoberto.
         self.assertIn("ont-lineprofile-id 11", texto)
         self.assertIn("ont-srvprofile-id 100", texto)
-        # VLAN, prioridade, user-vlan e gemport vieram da descoberta.
+        # A prioridade vem do config.ini; VLAN, user-vlan e gemport vieram
+        # da descoberta.
         self.assertIn("pppoe vlan 2551 priority 5", texto)
         self.assertIn("user-vlan 2551", texto)
         self.assertIn("gemport 37", texto)
         # Perfis WAN/TR-069 vieram da descoberta.
         self.assertIn("ont tr069-server-config 4 42 profile-id 1", texto)
         self.assertIn("ont wan-config 4 42 ip-index 0 profile-id 10", texto)
+
+    def _dados_de_ont(self):
+        return {
+            "porta": 4,
+            "ont_id": 42,
+            "interface": "0/1",
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "vlane": 2551,
+            "prioridade": "--",
+            "srvprofile": 100,
+            "gemport": 37,
+        }
+
+    def test_prioridade_vem_do_configuracao(self):
+        # A prioridade não é lida na ONT: o que vale é o número do
+        # config.ini, mesmo quando o estado descoberto traz outro valor.
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "prioridade": 7,
+            "tr069profile": 1,
+            "wanprofile": 10,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=self.sessao,
+            executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        dados = self._dados_de_ont()
+        self.assertEqual(
+            orquestrador._montar_configuracao(dados)["prioridade"], 7)
+        texto = "\n".join(orquestrador._montar_passos(dados))
+        self.assertIn("priority 7", texto)
+
+    def test_prioridade_ausente_bloqueia_com_mensagem_clara(self):
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=self.sessao,
+            executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        with self.assertRaises(script.ErroOperacao) as contexto:
+            orquestrador._montar_configuracao(self._dados_de_ont())
+        self.assertIn("prioridade não configurada no config.ini",
+                      str(contexto.exception))
 
     def test_sequencia_respeita_contexto_da_cli(self):
         # `undo service-port` e `service-port` são comandos da configuração
@@ -647,6 +713,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -741,6 +808,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -805,6 +873,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -894,6 +963,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
             "maximo": 5,
@@ -967,6 +1037,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1028,6 +1099,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
             "reprovisionar_ja_configuradas": "sim",
@@ -1097,6 +1169,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1165,6 +1238,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1229,6 +1303,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1309,6 +1384,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1378,6 +1454,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1466,6 +1543,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1535,6 +1613,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
             "reexecutar": "true",
@@ -1617,6 +1696,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1703,6 +1783,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1775,6 +1856,7 @@ class TestesFluxo(unittest.TestCase):
             "chave": "",
             "interface": "0/1",
             "lineprofile": 11,
+            "prioridade": 5,
             "tr069profile": 1,
             "wanprofile": 10,
         }
@@ -1811,7 +1893,35 @@ class TestesFluxo(unittest.TestCase):
         self.assertEqual(enviados, [])
 
 
+class TestesLinhaDeComando(unittest.TestCase):
+    def test_sem_prioridade_para_antes_de_conectar(self):
+        # Sem prioridade no config.ini o script responde antes de abrir
+        # sessão: a OLT penaliza login e o erro é de configuração, não de
+        # leitura. `--diagnostico` e `--test-ssh` dispensam o valor.
+        import reprovisionar_olt as cli
+
+        import io
+        from contextlib import redirect_stdout
+
+        ambiente = os.environ.pop("OLT_PRIORIDADE", None)
+        saida = io.StringIO()
+        try:
+            with tempfile.TemporaryDirectory() as pasta:
+                caminho = os.path.join(pasta, "config.ini")
+                with open(caminho, "w", encoding="utf-8") as arquivo:
+                    arquivo.write("[olt]\nhost = 127.0.0.1\n")
+                with redirect_stdout(saida):
+                    codigo = cli.main(
+                        ["--file", "planilha.xlsx", "--config", caminho])
+        finally:
+            if ambiente is not None:
+                os.environ["OLT_PRIORIDADE"] = ambiente
+        self.assertEqual(codigo, 1)
+        self.assertIn("prioridade não configurada", saida.getvalue())
+
+
 if __name__ == "__main__":
-    # O fallback da VLAN dominante avisa no log a cada execução de teste.
-    logging.getLogger("olt").setLevel(logging.ERROR)
+    # Os módulos usam o logger "reprovisionar_olt"; o aviso de fallback da
+    # VLAN dominante é esperado nos testes, que não definem `display vlan all`.
+    logging.getLogger("reprovisionar_olt").setLevel(logging.ERROR)
     unittest.main()

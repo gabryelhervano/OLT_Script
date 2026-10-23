@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from olt.comandos import exibir_comandos  # noqa: E402
+from olt.comandos import exibir_comandos, _validar_prioridade  # noqa: E402
 from olt.configuracao import (carregar_configuracao,  # noqa: E402
                               portas_configuradas)
 from olt.descoberta import (capturar_estado, listar_onts,  # noqa: E402
@@ -61,6 +61,7 @@ def _exibir_detalhes(resultados):
 def _exibir_configuracao(configuracao):
     print("  interface GPON: %s" % configuracao["interface"])
     print("  perfil linha (configurável): %s" % configuracao["lineprofile"])
+    print("  prioridade (configurável): %s" % configuracao.get("prioridade"))
     print("  demais parâmetros são descobertos no estado atual da ONT")
 
 
@@ -72,6 +73,25 @@ def _exibir_origem_configuracao(configuracao):
     else:
         print("  config: nenhum arquivo (usando variáveis de ambiente "
               "e valores padrão)")
+
+
+def _erro_de_prioridade(configuracao):
+    """Confere a prioridade configurada antes de abrir a sessão com a OLT.
+
+    A prioridade vem do `config.ini`, não da leitura da ONT: o valor lido
+    não era número em quase nenhuma CPE e derrubava a operação inteira.
+    A OLT penaliza login, então o erro de configuração aparece sem custar
+    uma conexão. Devolve a mensagem a imprimir, ou "" se estiver tudo certo.
+    """
+    valor = configuracao.get("prioridade")
+    if not str(valor or "").strip():
+        return ('ERRO: prioridade não configurada; informe '
+                '"prioridade = 5" no config.ini')
+    try:
+        _validar_prioridade(valor)
+    except ErroOperacao as erro:
+        return "ERRO: %s no config.ini" % erro
+    return ""
 
 
 def _exibir_passos(resultados):
@@ -170,6 +190,8 @@ def _executar_diagnostico(sessao, configuracao, seletor):
               "usando a VLAN de cada ONT" % erro)
     else:
         print("VLAN da OLT: %s (display vlan all)" % vlan_olt)
+    print("prioridade: %s (config.ini)"
+          % (configuracao.get("prioridade") or "não configurada"))
     for ont_id in sorted(onts):
         ont = onts[ont_id]
         partes = (ont.get("F/S/P") or "").split("/")
@@ -357,6 +379,13 @@ def main(argv=None):
         configuracao["reexecutar"] = "true"
     if argumentos.tempo_maximo:
         configuracao["tempo_maximo"] = argumentos.tempo_maximo
+
+    # Só os modos que não reconfiguram a ONT dispensam a prioridade.
+    if not (argumentos.testar_ssh or argumentos.diagnostico):
+        erro = _erro_de_prioridade(configuracao)
+        if erro:
+            print(erro)
+            return 1
 
     executar = argumentos.executar
     if executar:

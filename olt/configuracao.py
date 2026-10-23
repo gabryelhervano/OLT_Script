@@ -32,6 +32,9 @@ _PADROES_CONFIG = {
     "lineprofile": ("OLT_LINEPROFILE", "11"),
     "tr069profile": ("OLT_TR069PROFILE", "1"),
     "wanprofile": ("OLT_WANPROFILE", "10"),
+    # Prioridade de gerência do `ont ipconfig`. Não é descoberta: o valor
+    # lido na ONT não é número em quase nenhuma CPE e travava a operação.
+    "prioridade": ("OLT_PRIORIDADE", ""),
     "reprovisionar_ja_configuradas": ("OLT_REPROVISIONAR_JA_CONFIGURADAS", ""),
     "reexecutar": ("OLT_REEXECUTAR", ""),
     "filtrar_por_planilha": ("OLT_FILTRAR_POR_PLANILHA", "sim"),
