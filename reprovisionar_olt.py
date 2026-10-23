@@ -6,8 +6,8 @@ classifica os três padrões de CPE e executa o fluxo de reprovisionamento
 (configuração PPPoE, OMCI, WAN e TR-069) quando autorizado.
 
 Sem `--execute`, nenhuma alteração é enviada: apenas consultas de leitura
-são feitas, com a sessão SSH aberta. As senhas nunca aparecem em logs,
-relatórios ou mensagens de erro.
+são feitas, com a sessão SSH aberta. As senhas aparecem em texto puro na
+saída e no modo `--debug`: cuidado ao copiar a saída para terceiros.
 """
 
 import argparse
@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from olt.comandos import exibir_comandos, _validar_prioridade  # noqa: E402
+from olt.comandos import _validar_prioridade  # noqa: E402
 from olt.configuracao import (carregar_configuracao,  # noqa: E402
                               portas_configuradas)
 from olt.descoberta import (capturar_estado, listar_onts,  # noqa: E402
@@ -96,7 +96,7 @@ def _erro_de_prioridade(configuracao):
 
 def _exibir_passos(resultados):
     for resultado in resultados.values():
-        for comando in exibir_comandos(resultado.get("passos", [])):
+        for comando in resultado.get("passos", []):
             print("  %s" % comando)
 
 
@@ -127,7 +127,7 @@ def _exibir_roteiro(sessao, resultados):
         encontrado = True
         print("")
         print("  ONT %s" % identificador)
-        for comando in exibir_comandos(passos):
+        for comando in passos:
             print("    [ALTERAÇÃO] %s" % comando)
     if not encontrado:
         print("  (nenhuma ONT classificada para reprovisionamento)")
@@ -136,9 +136,9 @@ def _exibir_roteiro(sessao, resultados):
 def _monitor_terminal(comando, saida, alteracao):
     """Exibe a troca com a OLT no modo debug: comando e resposta crua.
 
-    As senhas já vêm mascaradas da sessão. A resposta é mostrada exatamente
-    como a CLI devolveu (inclui o eco do que a OLT recebeu), que é o que
-    permite enxergar um comando truncado ou uma sessão dessincronizada.
+    A resposta é mostrada exatamente como a CLI devolveu (inclui o eco do
+    que a OLT recebeu), que é o que permite enxergar um comando truncado
+    ou uma sessão dessincronizada.
     """
     rotulo = "ALTERAÇÃO" if alteracao else "leitura"
     print("", flush=True)
@@ -317,7 +317,7 @@ def _parse_argumentos(argv):
                              "(leituras enviadas e alterações planejadas)")
     parser.add_argument("--debug", action="store_true",
                         help="mostra o terminal da OLT: cada comando enviado "
-                             "e a resposta crua da CLI (senhas mascaradas)")
+                             "e a resposta crua da CLI")
     parser.add_argument("--reexecutar", action="store_true",
                         help="reprovisiona também as ONTs que o registro "
                              "(registro_operacoes.json) marca como concluídas")
@@ -396,7 +396,7 @@ def main(argv=None):
         print("modo: DRY-RUN na OLT (somente leitura, nada será alterado)")
     monitor = _monitor_terminal if argumentos.debug else None
     if monitor:
-        print("modo debug: terminal da OLT exibido (senhas mascaradas)")
+        print("modo debug: terminal da OLT exibido")
 
     registros, problemas = ler_planilha(argumentos.arquivo)
     print("planilha: %s" % _resumo_planilha(registros, problemas))

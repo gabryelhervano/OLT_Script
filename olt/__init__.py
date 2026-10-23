@@ -16,7 +16,7 @@ from .classificacao import classificar
 from .comandos import (comando_configurar_internet, comando_configurar_pppoe,
                        comando_configurar_tr069, comando_configurar_wan,
                        comando_criar_ont, comando_criar_service_port,
-                       comando_native_vlan, exibir_comandos, montar_passos)
+                       comando_native_vlan, montar_passos)
 from .configuracao import carregar_configuracao, portas_configuradas
 from .descoberta import capturar_estado, listar_onts, vlan_dominante
 from .erros import ErroOperacao
@@ -33,7 +33,7 @@ from .relatorio import carregar_registro, chave_ont, gravar_relatorio, \
 from .sessao import SessaoSimulada, SessaoSSH, Simulador, Transporte, \
     conectar_ssh
 
-__version__ = "1.9.0"
+__version__ = "1.10.0"
 
 __all__ = [
     "__version__",
@@ -68,7 +68,6 @@ __all__ = [
     "comando_criar_service_port",
     "comando_native_vlan",
     "conectar_ssh",
-    "exibir_comandos",
     "gravar_relatorio",
     "indexar",
     "ler_planilha",

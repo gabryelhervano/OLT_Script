@@ -158,8 +158,8 @@ def _consultar_configuracao_atual(sessao):
 
     Traz o que os `display ont ...` não expõem: os identificadores dos
     perfis (serviço, TR-069 e WAN) e quais configurações opcionais existem
-    para cada ONT. A senha PPPoE que aparece no arquivo é ignorada e nunca
-    é gravada em relatório, log ou saída.
+    para cada ONT. A senha PPPoE que aparece nessa listagem é ignorada: o
+    script usa sempre a senha da planilha.
     """
     saida = sessao.executar("display current-configuration | include ont")
     perfis = {"srv": {}, "linha": {}}

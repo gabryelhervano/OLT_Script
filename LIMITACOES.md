@@ -84,8 +84,10 @@ operador.
 
 ## Segurança de credenciais
 
-- Senhas PPPoE e senhas SSH nunca são gravadas em logs, relatórios ou mensagens
-  de erro. No relatório, comandos com senha aparecem mascarados.
+- Senhas PPPoE e senhas SSH não são gravadas no relatório CSV, que não registra
+  comandos. Na saída do terminal (resumo, `--roteiro` e `--debug`) e em
+  mensagens de diagnóstico elas aparecem em texto puro, exatamente como são
+  enviadas: cuidado ao copiar a saída para terceiros.
 - Valores contendo `"` ou `\` são bloqueados na montagem do comando, pois a CLI
   Huawei não garante transmissão segura deles.
 - A conexão SSH valida a chave do servidor (`RejectPolicy`); chaves novas não

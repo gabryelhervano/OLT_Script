@@ -4,6 +4,18 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.10.0 - 2026-10-23
+
+- A senha deixa de ser mascarada na saída: o resumo de comandos, o `--roteiro`
+  e o modo `--debug` mostram o comando exatamente como sai para a OLT, com o
+  valor real — é o que permite conferir o que está sendo configurado. O eco
+  que a CLI devolve também aparece cru.
+- O relatório CSV não muda: ele continua sem gravar comandos nem senhas.
+- Saíram do código `exibir_comandos` e `mascarar_valor`, que não tinham mais
+  o que mascarar.
+- Atenção: qualquer saída copiada (terminal, transcrição, chat) passa a
+  conter as senhas PPPoE em texto puro.
+
 ## v1.9.0 - 2026-10-23
 
 - A prioridade do `ont ipconfig` passa a vir do `config.ini`

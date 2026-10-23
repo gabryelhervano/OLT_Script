@@ -13,7 +13,7 @@ import time
 import paramiko
 
 from .erros import ErroOperacao
-from .util import mascarar_valor, resumo_texto
+from .util import resumo_texto
 
 logger = logging.getLogger("reprovisionar_olt")
 
@@ -101,11 +101,10 @@ class SessaoSimulada(Transporte):
         return saida
 
     def _monitorar(self, comando, saida, alteracao):
-        """Repassa a troca ao modo debug, com as senhas mascaradas."""
+        """Repassa a troca ao modo debug, exatamente como foi trocada."""
         if self.monitor is None:
             return
-        self.monitor(mascarar_valor(comando), mascarar_valor(saida),
-                     alteracao)
+        self.monitor(comando, saida, alteracao)
 
     def fechar(self):
         self.conectada = False
@@ -204,21 +203,14 @@ class SessaoSSH:
         return saida
 
     def _monitorar(self, comando, saida, alteracao):
-        """Repassa a troca ao modo debug, com as senhas mascaradas.
+        """Repassa a troca ao modo debug, sem edição.
 
-        Além do `password "..."` dos comandos, o valor literal das senhas
-        também é substituído: uma CLI pode ecoar o que foi digitado.
+        O que a CLI ecoa é o que aparece: é assim que se enxerga um
+        comando truncado ou uma sessão dessincronizada.
         """
         if self.monitor is None:
             return
-        comando_limpo = mascarar_valor(comando)
-        saida_limpa = mascarar_valor(saida)
-        for segredo in (self.configuracao.get("senha"),
-                        self.configuracao.get("senha_enable")):
-            if segredo:
-                comando_limpo = comando_limpo.replace(segredo, "********")
-                saida_limpa = saida_limpa.replace(segredo, "********")
-        self.monitor(comando_limpo, saida_limpa, alteracao)
+        self.monitor(comando, saida, alteracao)
 
     def _entrar_em_enable(self):
         """Entra no modo privilegiado (`enable`), exigido por parte das CLIs.

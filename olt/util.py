@@ -21,17 +21,9 @@ def agora_iso():
     return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def mascarar_valor(comando):
-    """Substitui a senha de um comando pelo equivalente mascarado."""
-    import re
-
-    return re.sub(r'password\s+"[^"]*"', 'password "********"', comando)
-
-
 def resumo_texto(texto_saida, tamanho=200):
-    """Versão curta de uma saída da CLI, sem senhas, para diagnóstico."""
+    """Versão curta de uma saída da CLI, para diagnóstico."""
     limpo = (texto_saida or "").strip()
-    limpo = mascarar_valor(limpo)
     limpo = " ".join(limpo.split())
     if len(limpo) > tamanho:
         limpo = "..." + limpo[-tamanho:]

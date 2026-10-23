@@ -7,7 +7,7 @@ parâmetros vêm do estado atual da ONT, exceto o line-profile, que é o
 """
 
 from .erros import CredenciaisNaoTransmitidas, ErroOperacao
-from .util import mascarar_valor, texto
+from .util import texto
 
 
 def _aspas(valor):
@@ -152,11 +152,6 @@ def comando_criar_service_port(configuracao):
             _validar_vlan(configuracao["user_vlan"]),
         )
     )
-
-
-def exibir_comandos(comandos):
-    """Devolve os comandos com a senha mascarada, para exibição."""
-    return [mascarar_valor(comando) for comando in comandos]
 
 
 def montar_passos(interface, configuracao, estado_original):

@@ -201,7 +201,7 @@ def main():
         print("%s -> %s" % (identificador, resultado["classe"]))
         if resultado.get("motivo"):
             print("      motivo: %s" % resultado["motivo"])
-        for comando in script.exibir_comandos(resultado.get("passos", [])):
+        for comando in resultado.get("passos", []):
             print("  %s" % comando)
     print("simulação concluída")
 

@@ -336,16 +336,31 @@ class TestesSessao(unittest.TestCase):
         self.assertFalse(sessao._prompt_no_buffer(""))
         self.assertFalse(sessao._prompt_no_buffer("saida sem prompt"))
 
-    def test_comandos_mascarados(self):
-        comando = 'ont ipconfig 4 42 pppoe vlan 2551 password "segredo"'
-        mascarado = script.exibir_comandos([comando])[0]
-        self.assertIn('password "********"', mascarado)
-        self.assertNotIn("segredo", mascarado)
+    def test_saida_mostra_a_senha_real(self):
+        # A saída mostra o comando como ele sai para a OLT, com a senha
+        # da planilha em texto puro — é o que permite conferir o valor.
+        import io
+        import contextlib
+
+        import reprovisionar_olt as cli
+
+        saida = io.StringIO()
+        comandos = {
+            "0/1/4/42": {
+                "passos": [
+                    'ont ipconfig 4 42 pppoe vlan 2551 password "segredo"'],
+            },
+        }
+        with contextlib.redirect_stdout(saida):
+            cli._exibir_passos(comandos)
+        texto = saida.getvalue()
+        self.assertIn('password "segredo"', texto)
+        self.assertNotIn("********", texto)
 
     def test_modo_debug_exibe_o_terminal_da_olt(self):
         # O monitor recebe cada troca: comando, resposta crua e se era uma
-        # alteração. A senha é mascarada no comando e na resposta (a CLI
-        # ecoa o que recebeu).
+        # alteração. A resposta vem exatamente como a CLI devolveu, com o
+        # eco do que a OLT recebeu (inclusive a senha).
         trocas = []
         sessao = script.SessaoSimulada(
             monitor=lambda comando, saida, alteracao: trocas.append(
@@ -367,10 +382,10 @@ class TestesSessao(unittest.TestCase):
         self.assertFalse(alteracao)
         comando, saida, alteracao = trocas[1]
         self.assertTrue(alteracao)
-        self.assertIn('password "********"', comando)
-        self.assertIn('password "********"', saida)
-        self.assertNotIn("1234", comando)
-        self.assertNotIn("1234", saida)
+        self.assertIn('password "1234"', comando)
+        self.assertIn('password "1234"', saida)
+        self.assertNotIn("********", comando)
+        self.assertNotIn("********", saida)
 
     def test_monitor_do_cli_mostra_rotulo_e_resposta(self):
         import io
@@ -565,12 +580,9 @@ class TestesFluxo(unittest.TestCase):
         self.assertEqual(partes[0], "service-port")
         self.assertEqual(partes[1], "vlan")
 
-    def test_senha_e_mascarada(self):
+    def test_senha_do_comando_e_a_da_planilha(self):
         comando = script.comando_configurar_pppoe(self._configuracao())
         self.assertIn('password "000123"', comando)
-        mascarado = script.exibir_comandos([comando])[0]
-        self.assertIn('password "********"', mascarado)
-        self.assertNotIn("000123", mascarado)
 
     def test_descobrimento_usa_estado_atual(self):
         # Somente o line-profile vem da configuração; todos os demais valores

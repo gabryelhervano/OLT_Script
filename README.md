@@ -62,7 +62,8 @@ python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --roteiro --serial HWTC0D3
 
 # Modo debug: exibe o terminal da OLT ao vivo — cada comando enviado e a
 # resposta crua da CLI, com o rótulo de leitura/alteração. As senhas aparecem
-# mascaradas. Vale no DRY-RUN e no --execute.
+# em texto puro, que é exatamente o valor que vai para a OLT. Vale no DRY-RUN
+# e no --execute.
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --debug --serial HWTC0D3BDDA7
 
 # Limita a execução a uma ONT (padrão conservador).
@@ -185,6 +186,7 @@ ser retomado com `git checkout <commit>`.
 
 ## Relatório
 
-O relatório CSV registra, por ONT: identificador, padrão de CPE, método de
-associação, etapa, consultas, validações, motivo e comandos executados. Senhas
-nunca aparecem; comandos com senha são gravados mascarados.
+O relatório CSV registra, por ONT: data, OLT, F/S/P, ONT ID, classe, motivo e
+observações — não há comandos nem senhas nele. Na saída do terminal (resumo,
+`--roteiro` e `--debug`) as senhas aparecem em texto puro, que é o valor
+enviado à OLT: cuidado ao copiar essa saída para terceiros.
