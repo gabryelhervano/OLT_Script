@@ -177,8 +177,8 @@ def _executar_diagnostico(sessao, configuracao, seletor):
             print("   INCONCLUSIVO: %s" % erro)
             continue
         for campo in ("usuario", "vlane", "prioridade", "lineprofile_atual",
-                      "srvprofile", "gemport", "user_vlan", "service_port",
-                      "tipo_wan", "status_conexao"):
+                      "srvprofile", "gemport", "user_vlan", "service_vlan",
+                      "service_port", "tipo_wan", "status_conexao"):
             valor = estado.get(campo)
             if valor in (None, ""):
                 print("   %-17s: (não identificado)" % campo)

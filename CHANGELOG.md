@@ -4,6 +4,18 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.7.1 - 2026-10-23
+
+- O `service-port` era recriado com a **manage VLAN da ONT** no lugar da VLAN
+  do service-port que já atendia a ONT. Quando os dois números diferem, o
+  script trocava o mapeamento de serviço da OLT sem ninguém ter pedido. Agora
+  `service-port vlan` usa a VLAN descoberta na listagem
+  `display service-port all` (o `user-vlan` já vinha de lá); a manage VLAN
+  continua sendo usada no `ont ipconfig` e no `native-vlan`, que configuram a
+  própria ONT.
+- `--diagnostico` passa a mostrar o campo `service_vlan` junto com
+  `user_vlan` e `service_port`.
+
 ## v1.7.0 - 2026-10-22
 
 - Uma ONT registrada como concluída deixava de aparecer na saída: ela era

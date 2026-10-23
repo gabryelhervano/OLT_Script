@@ -145,7 +145,7 @@ def comando_criar_service_port(configuracao):
         "service-port vlan %d gpon %s ont %d gemport %d multi-service "
         "user-vlan %d tag-transform translate"
         % (
-            _vlan(configuracao),
+            _validar_vlan(configuracao["service_vlan"]),
             caminho_gpon,
             configuracao["ont_id"],
             int(configuracao["gemport"]),

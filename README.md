@@ -126,9 +126,12 @@ A conexão e os perfis usados vêm de variáveis de ambiente ou de um arquivo IN
 real é necessário para o modo DRY-RUN. São configuráveis o line-profile
 (`ont-lineprofile-id`), o perfil TR-069 (`ont tr069-server-config`) e o perfil
 WAN (`ont wan-config`); todos os demais valores usados na reprovisão (VLAN,
-prioridade, gemport, user-vlan e o srv-profile) são descobertos no estado
-atual da ONT a cada execução. Se algum deles não puder ser identificado, o
-ONT fica `INCONCLUSIVO` e nenhuma alteração é enviada.
+prioridade, gemport, user-vlan, a VLAN do service-port e o srv-profile) são
+descobertos no estado atual da ONT a cada execução. O `service-port` é
+recriado com a VLAN e o user-vlan do service-port que já atende a ONT, de
+modo a preservar o mapeamento de serviço que a OLT já tem. Se algum deles
+não puder ser identificado, a ONT fica `INCONCLUSIVO` e nenhuma alteração é
+enviada.
 
 ### Autenticação por senha
 

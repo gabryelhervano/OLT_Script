@@ -424,6 +424,10 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
         "srvprofile": srvprofile,
         "gemport": (servico or {}).get("gemport"),
         "user_vlan": (servico or {}).get("user-vlan") or vlane,
+        # A VLAN do service-port que já atende a ONT é reaproveitada na
+        # recriação: usar a manage VLAN no lugar dela mudaria o mapeamento
+        # de serviço que a OLT já tem.
+        "service_vlan": (servico or {}).get("vlan") or vlane,
         "service_port": (servico or {}).get("id"),
         "tipo_wan": _campo(campos_wan, "Service type"),
         "status_conexao": _campo(campos_wan, "IPv4 Connection status"),

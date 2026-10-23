@@ -189,7 +189,7 @@ class Orquestrador:
                 dados["ont_id"], estado_atual, self._configuracao_atual())
             for campo in ("vlane", "prioridade", "srvprofile",
                          "lineprofile_atual", "gemport", "user_vlan",
-                         "service_port"):
+                         "service_vlan", "service_port"):
                 if campo in estado_atual:
                     dados[campo] = estado_atual[campo]
             resultado = self._classificar(
@@ -442,9 +442,10 @@ class Orquestrador:
             "senha": dados["senha"],
             "gemport": dados["gemport"],
             "user_vlan": dados.get("user_vlan") or dados["vlane"],
+            "service_vlan": dados.get("service_vlan") or dados["vlane"],
         }
         for campo in ("vlan", "prioridade", "srvprofile", "gemport",
-                      "user_vlan"):
+                      "user_vlan", "service_vlan"):
             if not configuracao[campo]:
                 raise ErroOperacao(
                     "valor atual não identificado: %s" % campo)

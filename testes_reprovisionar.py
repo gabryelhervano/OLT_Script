@@ -501,6 +501,7 @@ class TestesFluxo(unittest.TestCase):
             "senha": "000123",
             "gemport": 37,
             "user_vlan": 2551,
+            "service_vlan": 2551,
         }
 
     def por_serial(self):
@@ -1559,6 +1560,79 @@ class TestesFluxo(unittest.TestCase):
         self.assertTrue(argumentos.reexecutar)
         self.assertFalse(
             cli._parse_argumentos(["--file", "x.xlsx"]).reexecutar)
+
+    def test_service_port_reaproveita_a_vlan_ja_em_uso(self):
+        # A ONT está na manage VLAN 2551, mas o service-port que a atende
+        # usa VLAN 1001 na OLT: a recriação tem que manter os 1001. Usar a
+        # manage VLAN no lugar deles mudaria o mapeamento de serviço que a
+        # OLT já tem, sem ninguém ter pedido.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all",
+            RESPOSTA_SERVICE_PORT.replace(
+                "796 2551 common", "796 1001 common").replace(
+                "vlan  2551", "vlan  2002"))
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            RESPOSTA_CONFIG_ATUAL)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resultados = orquestrador.executar(
+            [registro], indice_por_serial, indice_por_usuario)
+        passos = resultados["0/1/4/42"]["passos"]
+        texto = "\n".join(passos)
+        # O service-port recriado usa a VLAN que a OLT já usava (1001) e o
+        # user-vlan do fluxo existente (2002) — não a manage VLAN.
+        self.assertIn(
+            "service-port vlan 1001 gpon 0/1/4 ont 42 gemport 37 "
+            "multi-service user-vlan 2002 tag-transform translate",
+            passos)
+        # A ONT continua sendo configurada na manage VLAN dela (2551).
+        self.assertIn("pppoe vlan 2551 priority 5", texto)
+        self.assertIn("ont port native-vlan 4 42 eth 1 vlan 2551", texto)
 
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o
