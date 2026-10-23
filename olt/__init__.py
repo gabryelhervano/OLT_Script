@@ -18,7 +18,7 @@ from .comandos import (comando_configurar_internet, comando_configurar_pppoe,
                        comando_criar_ont, comando_criar_service_port,
                        comando_native_vlan, exibir_comandos, montar_passos)
 from .configuracao import carregar_configuracao, portas_configuradas
-from .descoberta import capturar_estado, listar_onts
+from .descoberta import capturar_estado, listar_onts, vlan_dominante
 from .erros import ErroOperacao
 from .estados import (BLOQUEADA_AMBIGUIDADE, BLOQUEADA_DIVERGENCIA,
                       DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
@@ -33,7 +33,7 @@ from .relatorio import carregar_registro, chave_ont, gravar_relatorio, \
 from .sessao import SessaoSimulada, SessaoSSH, Simulador, Transporte, \
     conectar_ssh
 
-__version__ = "1.7.1"
+__version__ = "1.8.0"
 
 __all__ = [
     "__version__",
@@ -73,6 +73,7 @@ __all__ = [
     "indexar",
     "ler_planilha",
     "listar_onts",
+    "vlan_dominante",
     "montar_passos",
     "portas_configuradas",
     "resumo_planilha",

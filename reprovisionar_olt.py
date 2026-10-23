@@ -21,7 +21,7 @@ from olt.comandos import exibir_comandos  # noqa: E402
 from olt.configuracao import (carregar_configuracao,  # noqa: E402
                               portas_configuradas)
 from olt.descoberta import (capturar_estado, listar_onts,  # noqa: E402
-                            listar_perfis)
+                            listar_perfis, vlan_dominante)
 from olt.erros import ErroOperacao  # noqa: E402
 from olt.interacao import configurar_codificacao  # noqa: E402
 from olt.orquestrador import Orquestrador  # noqa: E402
@@ -162,6 +162,14 @@ def _executar_diagnostico(sessao, configuracao, seletor):
     except ErroOperacao as erro:
         print("configuração corrente indisponível: %s" % erro)
         config_atual = {"perfis": {}, "onts": {}}
+    try:
+        vlan_olt = vlan_dominante(sessao)
+    except ErroOperacao as erro:
+        vlan_olt = ""
+        print("VLAN da OLT: não identificada (%s); "
+              "usando a VLAN de cada ONT" % erro)
+    else:
+        print("VLAN da OLT: %s (display vlan all)" % vlan_olt)
     for ont_id in sorted(onts):
         ont = onts[ont_id]
         partes = (ont.get("F/S/P") or "").split("/")
@@ -172,7 +180,8 @@ def _executar_diagnostico(sessao, configuracao, seletor):
                  ont.get("Description"), ont.get("estado")))
         try:
             estado = capturar_estado(
-                sessao, interface, porta, ont_id, config_atual)
+                sessao, interface, porta, ont_id, config_atual,
+                vlan_olt=vlan_olt)
         except ErroOperacao as erro:
             print("   INCONCLUSIVO: %s" % erro)
             continue

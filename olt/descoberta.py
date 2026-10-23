@@ -231,6 +231,35 @@ _PADRAO_SERVICE_PORT = re.compile(
 )
 
 
+_PADRAO_VLAN = re.compile(
+    r"^\s*(?P<vlan>\d+)\s+\S+\s+\S+\s+\d+\s+(?P<serv>\d+)")
+
+
+def vlan_dominante(sessao):
+    """VLAN com mais service-ports na OLT, lida uma única vez por execução.
+
+    `display vlan all` traz, por VLAN, quantos service-ports ela atende: a de
+    maior contagem é a que tem mais CPEs conectadas e é a que as próximas
+    reprovisionagens devem usar. O valor é o mesmo para toda a OLT, por isso
+    a leitura é feita uma única vez e não ONT por ONT.
+    """
+    saida = sessao.executar("display vlan all")
+    candidatos = []
+    for linha in saida.splitlines():
+        achado = _PADRAO_VLAN.match(linha)
+        if not achado:
+            continue
+        candidatos.append(
+            (int(achado.group("serv")), int(achado.group("vlan"))))
+    if not candidatos:
+        raise ErroOperacao("VLAN dominante não identificada")
+    # Maior contagem de service-ports; em empate, a menor VLAN.
+    servicos, vlan = max(candidatos, key=lambda par: (par[0], -par[1]))
+    if not servicos:
+        raise ErroOperacao("nenhuma VLAN com service-port")
+    return str(vlan)
+
+
 def _consultar_ipconfig(sessao, interface, porta, ont_id):
     """Lê o ipconfig da ONT.
 
@@ -371,12 +400,14 @@ def _mac_util(*fontes):
 
 
 def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
-                    servicos=None):
+                    servicos=None, vlan_olt=None):
     """Registra o estado atual da ONT, sem executar nenhum comando de alteração.
 
     Todos os demais valores são descobertos na resposta dos comandos de
     leitura; nenhum valor é assumido. Somente o lineprofile é configurável
-    (definido fora desta função).
+    (definido fora desta função). Quando `vlan_olt` é informada — a VLAN mais
+    usada na OLT — ela substitui a VLAN da própria ONT em todos os comandos,
+    para que toda CPE saia com a mesma VLAN.
     """
     wan_info = sessao.executar(
         "display ont wan-info %s %d %d" % (interface, porta, ont_id))
@@ -405,8 +436,8 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
     lineprofile_atual = atual.get("lineprofile")
     usuario = _campo(campos_ip, "PPPoE username", "Username") or \
         atual.get("usuario") or ""
-    vlane = _campo(campos_ip, "ONT manage VLAN", "Manage VLAN") or \
-        atual.get("vlan")
+    vlane = vlan_olt or _campo(
+        campos_ip, "ONT manage VLAN", "Manage VLAN") or atual.get("vlan")
     if not vlane:
         vlane = _campo(campos_wan, "Manage VLAN", "ONT manage VLAN")
     if not vlane:
@@ -423,11 +454,11 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
         "lineprofile_atual": lineprofile_atual,
         "srvprofile": srvprofile,
         "gemport": (servico or {}).get("gemport"),
-        "user_vlan": (servico or {}).get("user-vlan") or vlane,
-        # A VLAN do service-port que já atende a ONT é reaproveitada na
-        # recriação: usar a manage VLAN no lugar dela mudaria o mapeamento
-        # de serviço que a OLT já tem.
-        "service_vlan": (servico or {}).get("vlan") or vlane,
+        # Com a VLAN da OLT, service-port e user-vlan saem nela. Sem ela,
+        # reaproveita-se o service-port que já atende a ONT, para não mudar
+        # o mapeamento de serviço que a OLT já tem.
+        "user_vlan": vlan_olt or (servico or {}).get("user-vlan") or vlane,
+        "service_vlan": vlan_olt or (servico or {}).get("vlan") or vlane,
         "service_port": (servico or {}).get("id"),
         "tipo_wan": _campo(campos_wan, "Service type"),
         "status_conexao": _campo(campos_wan, "IPv4 Connection status"),

@@ -14,7 +14,7 @@ from .comandos import montar_passos
 from .configuracao import PREFIXOS_SERIAL_PADRAO, portas_configuradas
 from .descoberta import (_consultar_configuracao_atual, _servico_da_ont,
                       capturar_estado, listar_onts, listar_servicos,
-                      resolver_perfis)
+                      resolver_perfis, vlan_dominante)
 from .erros import ErroOperacao
 from .estados import (DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
                       ESTADO_SUCESSO, IGNORADA_SEM_IDENTIFICADORES,
@@ -98,6 +98,7 @@ class Orquestrador:
         self._config_atual = None
         self._lista_servicos = None
         self.caminho_registro = caminho_registro
+        self._vlan_olt = None
         self.registro = carregar_registro(caminho_registro)
         self.concluidos = set()
         if not self._reexecutar():
@@ -173,7 +174,7 @@ class Orquestrador:
                 estado_atual = capturar_estado(
                     self.sessao, dados["interface"], dados["porta"],
                     dados["ont_id"], self._configuracao_atual(),
-                    self._listar_servicos())
+                    self._listar_servicos(), self._vlan_da_olt())
             except ErroOperacao as erro:
                 # Uma ONT ilegível não interrompe as demais do card.
                 self.resultados[identificador] = {
@@ -236,6 +237,21 @@ class Orquestrador:
                 logger.error("leitura dos service-ports falhou: %s", erro)
                 self._lista_servicos = []
         return self._lista_servicos
+
+    def _vlan_da_olt(self):
+        """VLAN mais usada na OLT, lida uma única vez por execução.
+
+        É a mesma para todas as ONTs; quando não pode ser lida, o fluxo
+        continua com a VLAN descoberta em cada ONT, como antes.
+        """
+        if self._vlan_olt is None:
+            try:
+                self._vlan_olt = vlan_dominante(self.sessao)
+            except ErroOperacao as erro:
+                logger.warning(
+                    "%s: usando a VLAN de cada ONT", erro)
+                self._vlan_olt = ""
+        return self._vlan_olt
 
     def _configuracao_atual(self):
         """Configuração corrente da OLT, lida uma única vez por execução.

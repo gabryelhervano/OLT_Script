@@ -4,6 +4,18 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.8.0 - 2026-10-23
+
+- A VLAN passa a vir de uma leitura única da OLT (`display vlan all`): é a
+  VLAN com mais service-ports, ou seja, a que tem mais CPEs conectadas, e é
+  aplicada em todos os comandos — `ont ipconfig`, `native-vlan`,
+  `service-port` e `user-vlan`. Antes cada ONT usava a VLAN descoberta no
+  próprio estado, o que divergia entre CPEs e gerava erros como
+  `VLAN inválido` e `VLAN atual não identificada`.
+- Quando `display vlan all` não pode ser lido, o aviso sai no log e o fluxo
+  continua com a VLAN de cada ONT, como antes; nenhum valor é assumido.
+- `--diagnostico` mostra a VLAN da OLT antes do estado de cada ONT.
+
 ## v1.7.1 - 2026-10-23
 
 - O `service-port` era recriado com a **manage VLAN da ONT** no lugar da VLAN

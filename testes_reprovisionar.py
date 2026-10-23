@@ -5,6 +5,7 @@ O transporte registra todos os comandos enviados, o que permite provar que
 comandos de alteração nunca são enviados no DRY-RUN.
 """
 
+import logging
 import os
 import sys
 import tempfile
@@ -207,6 +208,23 @@ RESPOSTA_SERVICE_PORT = """   INDEX VLAN VLAN     PORT F/ S/ P VPI  VCI   FLOW  
      796 2551 common   gpon 0/1 /4  42   37    vlan  2551       -    -    up
      797 2551 common   gpon 0/1 /4  43   38    vlan  2551       -    -    up
   -----------------------------------------------------------------------------
+"""
+
+# `display vlan all` real da MA5800-X7: 1001 é a VLAN com mais CPEs.
+RESPOSTA_VLAN_ALL = """  -----------------------------------------------------------------------
+  VLAN   Type      Attribute  STND-Port NUM   SERV-Port NUM  VLAN-Con NUM
+  -----------------------------------------------------------------------
+     1   smart     common                 8               0             -
+    22   smart     common                 1               2             -
+   105   smart     common                 1               1             -
+  1001   smart     common                 1             874             -
+  2470   smart     common                 1               0             -
+  3470   smart     common                 1               0             -
+  3850   smart     common                 1               0             -
+  -----------------------------------------------------------------------
+  Total: 7
+  Note : STND-Port--standard port, SERV-Port--service virtual port,
+         VLAN-Con--vlan-connect
 """
 
 
@@ -1634,6 +1652,94 @@ class TestesFluxo(unittest.TestCase):
         self.assertIn("pppoe vlan 2551 priority 5", texto)
         self.assertIn("ont port native-vlan 4 42 eth 1 vlan 2551", texto)
 
+    def test_vlan_dominante_e_a_com_mais_service_ports(self):
+        # `display vlan all` é lido uma única vez e devolve a VLAN com mais
+        # service-ports — aqui 1001, com 874 CPEs atrás dela.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta("display vlan all", RESPOSTA_VLAN_ALL)
+        self.assertEqual(script.vlan_dominante(sessao), "1001")
+        self.assertEqual(sessao.comandos, ["display vlan all"])
+
+    def test_vlan_dominante_sem_leitura_falha_em_vez_de_assumir(self):
+        # Sem `display vlan all` nada é assumido: a leitura falha e é o
+        # orquestrador quem decide cair na VLAN de cada ONT (cuberto pelos
+        # testes de fluxo, que não definem essa resposta).
+        sessao = script.SessaoSimulada()
+        with self.assertRaises(script.ErroOperacao):
+            script.vlan_dominante(sessao)
+
+    def test_toda_cpe_recebe_a_vlan_dominante_da_olt(self):
+        # A ONT está na 2551, mas a OLT usa 1001 em 874 service-ports: toda
+        # CPE que passa pelo processo sai na 1001 — ipconfig, native-vlan,
+        # service-port e user-vlan — em vez de cada ONT usar a sua.
+        sessao = script.SessaoSimulada()
+        sessao.definir_resposta("display vlan all", RESPOSTA_VLAN_ALL)
+        sessao.definir_resposta(
+            "display ont info summary 0/1/4", RESPOSTA_RESUMO_ONTS)
+        sessao.definir_resposta(
+            "display service-port all", RESPOSTA_SERVICE_PORT)
+        sessao.definir_resposta(
+            "display current-configuration | include ont",
+            RESPOSTA_CONFIG_ATUAL)
+        sessao.definir_resposta(
+            "display ont profile 0 1 4 42", RESPOSTA_PERFIL_ONT)
+        sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Manage priority : 5\n"
+            "  Service type : Tr069, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        sessao.definir_resposta(
+            "display ont ipconfig 4 42",
+            "  PPPoE username : joao\n"
+            "  ONT config type : PPPoE\n"
+            "  Manage VLAN : 2551\n"
+            "  ONT manage priority : 5\n")
+        configuracao = {
+            "host": "127.0.0.1",
+            "porta": "22",
+            "usuario": "",
+            "senha": "",
+            "chave": "",
+            "interface": "0/1",
+            "lineprofile": 11,
+            "tr069profile": 1,
+            "wanprofile": 10,
+        }
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        registro = {
+            "interface": "0/1",
+            "porta": 4,
+            "ont_id": 42,
+            "serial": "HWTC0D3BDDA7",
+            "usuario": "joao",
+            "senha": "1234",
+            "mac": "00:11:22:33:44:55",
+            "estado": "VALIDO",
+        }
+        indice_por_serial = {"HWTC0D3BDDA7": [registro]}
+        indice_por_usuario = {"joao": [registro]}
+        resultados = orquestrador.executar(
+            [registro], indice_por_serial, indice_por_usuario)
+        passos = resultados["0/1/4/42"]["passos"]
+        texto = "\n".join(passos)
+        # A VLAN da OLT (1001) aparece em todos os comandos de VLAN...
+        self.assertIn("pppoe vlan 1001 priority 5", texto)
+        self.assertIn("ont port native-vlan 4 42 eth 1 vlan 1001", texto)
+        self.assertIn(
+            "service-port vlan 1001 gpon 0/1/4 ont 42 gemport 37 "
+            "multi-service user-vlan 1001 tag-transform translate",
+            passos)
+        # ...e a VLAN antiga da ONT (2551) não aparece em nenhum.
+        self.assertNotIn("2551", texto)
+        # A leitura da OLT acontece uma única vez.
+        self.assertEqual(sessao.comandos.count("display vlan all"), 1)
+
     def test_bloqueio_quando_valor_nao_e_descoberto(self):
         # Nem a configuração corrente nem o `display ont profile` revelam o
         # srvprofile: nada pode ser assumido, então a ONT fica INCONCLUSIVO
@@ -1706,4 +1812,6 @@ class TestesFluxo(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # O fallback da VLAN dominante avisa no log a cada execução de teste.
+    logging.getLogger("olt").setLevel(logging.ERROR)
     unittest.main()
