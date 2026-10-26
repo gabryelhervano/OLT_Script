@@ -4,6 +4,33 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.11.0 - 2026-10-26
+
+Refatoração sem mudança no fluxo validado: a sequência enviada à OLT, as
+classes e os critérios de SUCESSO permanecem os mesmas; o que mudou foi a
+organização do código e o que aparece na saída.
+
+- `_preparar_card` virou três etapas nomeadas: `_triagem` (sem consultar a
+  OLT), `_avaliar_ont` (leitura, classificação e montagem dos passos) e
+  `_confirmar_card` (a confirmação por card).
+- `main` foi desdobrado em `_configuracao_da_execucao`, `_anunciar_modo`,
+  `_testar_conexao`, `_reprovisionar` e `_mostrar_resultados`.
+- `capturar_estado` passou a chamar `_ler_estado_da_ont`,
+  `_configuracao_da_ont` e `_vlan_desta_ont`; a leitura da configuração
+  corrente virou `_indexar_linha_de_ont` e `_entrada_da_ont`.
+- O observador do modo `--debug` ficou num único lugar (`Transporte`), que
+  passou a ser a classe base da sessão SSH.
+- Relatório CSV com só as colunas preenchidas: data, OLT, F/S/P, ONT ID,
+  classe, motivo e observações (as sete colunas que ficavam vazias saíram).
+- `--diagnostico` lista os perfis da OLT uma única vez, no fim — antes a
+  mesma leitura era repetida para cada ONT.
+- Mensagens e avisos acentuados em todo o código ("divergência",
+  "usuário inválido", "não foi possível conectar", "paginação da CLI").
+- Código morto removido: `esgotado`/`suspenso` (nada os lia e o aviso de
+  "execução suspensa" era mentira), o campo `situacao`, o parâmetro
+  `largura` de `_desembrulhar`, `_configurar_codificacao` do relatório
+  (duplicata da interação) e o filtro de comandos `display` na execução.
+
 ## v1.10.0 - 2026-10-23
 
 - A senha deixa de ser mascarada na saída: o resumo de comandos, o `--roteiro`

@@ -61,21 +61,18 @@ def _prioridade(configuracao):
 
 def comando_criar_ont(configuracao):
     """Monta `ont add` a partir dos dados validados."""
-    porta = configuracao["porta"]
-    ont_id = configuracao["ont_id"]
-    comando = (
+    return (
         "ont add %d %d sn-auth %s omci ont-lineprofile-id %d "
         "ont-srvprofile-id %d desc %s"
         % (
-            porta,
-            ont_id,
+            configuracao["porta"],
+            configuracao["ont_id"],
             _aspas(configuracao["serial"]),
             _perfil(configuracao, "lineprofile"),
             _perfil(configuracao, "srvprofile"),
             _aspas(configuracao["descricao"]),
         )
     )
-    return comando
 
 
 def comando_configurar_pppoe(configuracao):
@@ -164,19 +161,21 @@ def montar_passos(interface, configuracao, estado_original):
     porta = configuracao["porta"]
     ont_id = configuracao["ont_id"]
     passos = []
-    service_port_id = estado_original.get("service_port")
-    if service_port_id:
-        passos.append(comando_desconectar_service_port(service_port_id))
-    passos.append(comando_abrir_interface(interface))
-    passos.append(comando_remover_ont(porta, ont_id))
-    passos.append(comando_criar_ont(configuracao))
-    passos.append(comando_configurar_pppoe(configuracao))
-    passos.append(comando_native_vlan(configuracao))
-    passos.append(comando_configurar_tr069(configuracao))
-    passos.append(comando_configurar_internet(configuracao))
-    passos.append(comando_configurar_wan(configuracao))
-    passos.append(comando_sair_interface())
-    passos.append(comando_criar_service_port(configuracao))
+    if estado_original.get("service_port"):
+        passos.append(
+            comando_desconectar_service_port(estado_original["service_port"]))
+    passos.extend((
+        comando_abrir_interface(interface),
+        comando_remover_ont(porta, ont_id),
+        comando_criar_ont(configuracao),
+        comando_configurar_pppoe(configuracao),
+        comando_native_vlan(configuracao),
+        comando_configurar_tr069(configuracao),
+        comando_configurar_internet(configuracao),
+        comando_configurar_wan(configuracao),
+        comando_sair_interface(),
+        comando_criar_service_port(configuracao),
+    ))
     return passos
 
 

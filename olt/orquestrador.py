@@ -27,9 +27,24 @@ from .relatorio import (ARQUIVO_REGISTRO, carregar_registro,
 
 logger = logging.getLogger("reprovisionar_olt")
 
+# As três classes que entram no fluxo de reprovisionamento. As demais
+# (padrão 3, divergência, ambiguidade e ONTs já configuradas) apenas
+# constam no resultado.
+_REPROVISIONAVEIS = (PADRAO_1_COMPLETA, PADRAO_2_SERIAL, PADRAO_2_PPPOE)
+
+
+def _resultado(classe, motivo=""):
+    """Resultado de uma ONT: a classe alcançada e o motivo que a explica."""
+    return {"classe": classe, "motivo": motivo}
+
+
+def _ligado(valor):
+    """Interpreta um valor do config.ini como sim: 1, sim, yes ou true."""
+    return str(valor or "").strip().lower() in ("1", "sim", "yes", "true")
+
 
 class ControleExecucao:
-    """Limites de execução e suspensão após falhas consecutivas."""
+    """Limites da execução: quantidade de ONTs, intervalos e tempo total."""
 
     def __init__(self, maximo, atraso, pausa_apos, tempo_maximo):
         self.maximo = maximo
@@ -38,49 +53,46 @@ class ControleExecucao:
         self.tempo_maximo = tempo_maximo
         self.em_execucao = False
         self.falhas = 0
-        self.suspenso = False
         self.inicio = None
         self.processados = 0
 
     def iniciar(self):
         self.em_execucao = True
         self.falhas = 0
-        self.suspenso = False
         self.inicio = time.monotonic()
         self.processados = 0
 
     def aguardar(self):
+        """Espera o intervalo configurado antes da próxima ONT."""
         if self.em_execucao and self.atraso:
             time.sleep(self.atraso)
 
     def registrar_sucesso(self):
+        """Um comando aceito zera a contagem de falhas consecutivas."""
         self.falhas = 0
 
     def registrar_falha(self):
+        """Conta a falha; três seguidas pedem atenção do operador."""
         self.falhas += 1
         if self.falhas >= 3:
-            self.suspenso = True
-            logger.error("execução suspensa após %d falhas consecutivas",
-                     self.falhas)
-
-    def verificar_limite(self, processados):
-        if processados >= self.maximo:
-            return False
-        return True
+            logger.error("%d falhas consecutivas: verifique a OLT antes de "
+                         "continuar", self.falhas)
 
     def registrar_pausa(self):
+        """Pausa de 30 s a cada N ONTs, para não saturar a OLT."""
         if self.pausa_apos and self.processados % self.pausa_apos == 0:
             logger.info("pausa automática")
             time.sleep(30)
 
-    @property
-    def esgotado(self):
-        return self.falhas >= 3 or self.suspenso
+    def limite_atingido(self):
+        """Indica que o limite de ONTs da execução já foi alcançado."""
+        return self.processados >= self.maximo
 
-
-def _checar_tempo(controle):
-    if controle.tempo_maximo and controle.inicio:
-        if time.monotonic() - controle.inicio > controle.tempo_maximo:
+    def verificar_tempo(self):
+        """Interrompe quando o tempo máximo configurado se esgotou."""
+        if not self.tempo_maximo or not self.inicio:
+            return
+        if time.monotonic() - self.inicio > self.tempo_maximo:
             raise ErroOperacao("tempo máximo de execução excedido")
 
 
@@ -100,11 +112,7 @@ class Orquestrador:
         self.caminho_registro = caminho_registro
         self._vlan_olt = None
         self.registro = carregar_registro(caminho_registro)
-        self.concluidos = set()
-        if not self._reexecutar():
-            for identificador, info in self.registro.items():
-                if info.get("classe") == ESTADO_SUCESSO:
-                    self.concluidos.add(identificador)
+        self.concluidos = self._concluidos_da_campanha()
         self.seletor = seletor or {}
 
     def executar(self, registros, indice_por_serial, indice_por_usuario):
@@ -138,95 +146,113 @@ class Orquestrador:
         """Classifica o card e confirma antes de executar qualquer comando."""
         executaveis = []
         for dados in onts:
-            identificador = chave_ont(dados)
-            if identificador in self.concluidos:
-                # Registrada como SUCESSO numa execução anterior: o registro
-                # evita repetir o trabalho, mas o motivo é mostrado para não
-                # parecer que a ONT simplesmente sumiu.
-                anterior = self.registro.get(identificador) or {}
-                self.resultados[identificador] = {
-                    "classe": JA_CONCLUIDA,
-                    "motivo": "reprovisionada em %s (registro); use "
-                              "--reexecutar para repetir"
-                              % (anterior.get("data") or "data desconhecida"),
-                }
+            if self._triagem(dados, indice_por_serial, indice_por_usuario):
                 continue
-            if not self._serial_permitido(dados.get("serial")):
-                # A OLT só conversa com CPEs suportadas (Huawei): as demais
-                # são descartadas e o fluxo segue para a próxima ONT.
-                self.resultados[identificador] = {
-                    "classe": DESCARTA_POR_SERIAL,
-                    "motivo": "serial fora do perfil permitido: %s"
-                              % (dados.get("serial") or "(não informado)"),
-                }
-                continue
-            if self._sem_correspondencia(dados, indice_por_serial,
-                                         indice_por_usuario):
-                # Sem serial nem descrição na planilha, a ONT não entra no
-                # fluxo: as consultas de leitura são caras e não iam mudar
-                # o resultado.
-                self.resultados[identificador] = {
-                    "classe": IGNORADA_SEM_IDENTIFICADORES,
-                    "motivo": "sem correspondência com a planilha",
-                }
-                continue
-            try:
-                estado_atual = capturar_estado(
-                    self.sessao, dados["interface"], dados["porta"],
-                    dados["ont_id"], self._configuracao_atual(),
-                    self._listar_servicos(), self._vlan_da_olt())
-            except ErroOperacao as erro:
-                # Uma ONT ilegível não interrompe as demais do card.
-                self.resultados[identificador] = {
-                    "classe": ESTADO_INCONCLUSIVO,
-                    "motivo": "estado não identificado: %s" % erro,
-                }
-                continue
-            # Os perfis são resolvidos só para as ONTs que entraram no
-            # fluxo: a consulta `display ont profile` é desnecessária para
-            # as demais.
-            resolver_perfis(
+            self._avaliar_ont(dados, indice_por_serial, indice_por_usuario,
+                              executaveis)
+        return self._confirmar_card(card, executaveis)
+
+    def _triagem(self, dados, indice_por_serial, indice_por_usuario):
+        """Triagem sem consulta à OLT; devolve True quando a ONT fica fora.
+
+        Registrada como SUCESSO em campanha anterior, serial fora do
+        perfil permitido ou sem correspondência na planilha. Em todos os
+        casos o motivo fica registrado, para não parecer que a ONT
+        simplesmente sumiu.
+        """
+        identificador = chave_ont(dados)
+        if identificador in self.concluidos:
+            anterior = self.registro.get(identificador) or {}
+            self.resultados[identificador] = _resultado(
+                JA_CONCLUIDA,
+                "reprovisionada em %s (registro); use --reexecutar para "
+                "repetir" % (anterior.get("data") or "data desconhecida"))
+            return True
+        if not self._serial_permitido(dados.get("serial")):
+            # A OLT só conversa com CPEs suportadas (Huawei); as demais
+            # são descartadas e o fluxo segue para a próxima ONT.
+            self.resultados[identificador] = _resultado(
+                DESCARTA_POR_SERIAL,
+                "serial fora do perfil permitido: %s"
+                % (dados.get("serial") or "(não informado)"))
+            return True
+        if self._sem_correspondencia(dados, indice_por_serial,
+                                     indice_por_usuario):
+            # Sem serial nem descrição na planilha, a ONT não entra no
+            # fluxo: as consultas de leitura são caras e não iam mudar o
+            # resultado.
+            self.resultados[identificador] = _resultado(
+                IGNORADA_SEM_IDENTIFICADORES,
+                "sem correspondência com a planilha")
+            return True
+        return False
+
+    def _avaliar_ont(self, dados, indice_por_serial, indice_por_usuario,
+                     executaveis):
+        """Lê o estado da ONT, classifica e monta os passos, quando couber.
+
+        A ONT entra em `executaveis` — a lista que leva à confirmação do
+        card — assim que é classificada num dos padrões reprovisionáveis,
+        mesmo que a montagem dos passos venha a falhar depois.
+        """
+        identificador = chave_ont(dados)
+        try:
+            estado_atual = capturar_estado(
                 self.sessao, dados["interface"], dados["porta"],
-                dados["ont_id"], estado_atual, self._configuracao_atual())
-            for campo in ("vlane", "prioridade", "srvprofile",
-                         "lineprofile_atual", "gemport", "user_vlan",
-                         "service_vlan", "service_port"):
-                if campo in estado_atual:
-                    dados[campo] = estado_atual[campo]
-            resultado = self._classificar(
-                dados, estado_atual, indice_por_serial, indice_por_usuario)
-            if "registro" in resultado:
-                dados["usuario"] = resultado["registro"][_CHAVE_USUARIO]
-                dados["senha"] = resultado["registro"][_CHAVE_SENHA]
-            if resultado["classe"] in (PADRAO_1_COMPLETA, PADRAO_2_SERIAL,
-                                      PADRAO_2_PPPOE):
-                if self._ja_tem_o_perfil_desejado(estado_atual):
-                    # A ONT já está com o line-profile pedido: reprovisionar
-                    # de novo só geraria retrabalho e indisponibilidade.
-                    resultado["classe"] = JA_CONFIGURADA
-                    resultado["motivo"] = (
-                        "line-profile %s já aplicado"
-                        % self.configuracao["lineprofile"])
-                else:
-                    try:
-                        resultado["passos"] = self._montar_passos(dados)
-                    except ErroOperacao as erro:
-                        resultado["classe"] = ESTADO_INCONCLUSIVO
-                        resultado["motivo"] = "falha na execução: %s" % erro
-                    executaveis.append(dados)
-            self.resultados[identificador] = resultado
+                dados["ont_id"], self._configuracao_atual(),
+                self._listar_servicos(), self._vlan_da_olt())
+        except ErroOperacao as erro:
+            # Uma ONT ilegível não interrompe as demais do card.
+            self.resultados[identificador] = _resultado(
+                ESTADO_INCONCLUSIVO, "estado não identificado: %s" % erro)
+            return
+        # Os perfis são resolvidos só para as ONTs que entraram no fluxo:
+        # a consulta `display ont profile` é desnecessária para as demais.
+        resolver_perfis(
+            self.sessao, dados["interface"], dados["porta"],
+            dados["ont_id"], estado_atual, self._configuracao_atual())
+        self._absorver_estado(dados, estado_atual)
+        resultado = self._classificar(
+            dados, estado_atual, indice_por_serial, indice_por_usuario)
+        if "registro" in resultado:
+            dados["usuario"] = resultado["registro"][_CHAVE_USUARIO]
+            dados["senha"] = resultado["registro"][_CHAVE_SENHA]
+        if resultado["classe"] in _REPROVISIONAVEIS:
+            if self._ja_tem_o_perfil_desejado(estado_atual):
+                # A ONT já está com o line-profile pedido: reprovisionar
+                # de novo só geraria retrabalho e indisponibilidade.
+                resultado["classe"] = JA_CONFIGURADA
+                resultado["motivo"] = (
+                    "line-profile %s já aplicado"
+                    % self.configuracao["lineprofile"])
+            else:
+                try:
+                    resultado["passos"] = self._montar_passos(dados)
+                except ErroOperacao as erro:
+                    resultado["classe"] = ESTADO_INCONCLUSIVO
+                    resultado["motivo"] = "falha na execução: %s" % erro
+                executaveis.append(dados)
+        self.resultados[identificador] = resultado
+
+    def _absorver_estado(self, dados, estado_atual):
+        """Copia para a ONT os campos que só a leitura descobre."""
+        for campo in ("vlane", "prioridade", "srvprofile",
+                      "lineprofile_atual", "gemport", "user_vlan",
+                      "service_vlan", "service_port"):
+            if campo in estado_atual:
+                dados[campo] = estado_atual[campo]
+
+    def _confirmar_card(self, card, executaveis):
+        """Pede a confirmação do card quando há ONTs a reprovisionar."""
         if not executaveis:
             return True
         if not self.executar_alteracoes:
-            logger.info(
-                "simulação: card %s teria %d reprovisionamentos",
-                card, len(executaveis))
+            logger.info("simulação: card %s teria %d reprovisionamentos",
+                        card, len(executaveis))
             return True
         print("card %s: %d ONTs seriam reprovisionados"
               % (card, len(executaveis)))
-        if not interacao.confirmar("Executar alterações neste card?"):
-            return False
-        return True
+        return interacao.confirmar("Executar alterações neste card?")
 
     def _listar_servicos(self):
         """Listagem de service-ports da OLT, lida uma vez por execução."""
@@ -277,28 +303,25 @@ class Orquestrador:
         except ErroOperacao as erro:
             logger.error("consulta de ONTs falhou: %s", erro)
             return []
-        return [self._dados(ont) for ont in self._filtrar(onts.values())]
+        return [self._dados_da_ont(ont)
+                for ont in self._filtrar(onts.values())]
 
     def _portas(self):
         """Portas GPON a consultar; configurável, com todas como padrão."""
         return portas_configuradas(self.configuracao)
 
     def _filtrar(self, onts):
-        selecionado = {}
-        if self.seletor.get("ont_id") is not None:
-            selecionado["ont_id"] = self.seletor["ont_id"]
-        if self.seletor.get("serial"):
-            selecionado["serial"] = self.seletor["serial"]
-        resultado = []
+        """Mantém só as ONTs pedidas com `--ont-id` e `--serial`."""
+        alvo_id = self.seletor.get("ont_id")
+        alvo_serial = self.seletor.get("serial")
+        selecionadas = []
         for ont in onts:
-            if "ont_id" in selecionado and \
-                    ont["ont_id"] != selecionado["ont_id"]:
+            if alvo_id is not None and ont["ont_id"] != alvo_id:
                 continue
-            if "serial" in selecionado and \
-                    ont.get("Serial", "") != selecionado["serial"]:
+            if alvo_serial and ont.get("Serial", "") != alvo_serial:
                 continue
-            resultado.append(ont)
-        return resultado
+            selecionadas.append(ont)
+        return selecionadas
 
     def _classificar(self, dados, estado_atual, indice_por_serial,
                      indice_por_usuario):
@@ -310,18 +333,18 @@ class Orquestrador:
         return classificar(ont_atual, indice_por_serial, indice_por_usuario)
 
     def _processar(self, dados, indice_por_serial, indice_por_usuario):
+        """Executa (ou só simula) o passo de uma ONT já classificada."""
         identificador = chave_ont(dados)
         if identificador in self.concluidos or \
                 identificador in self.processados:
             return
-        if self._classe(identificador) not in (
-                PADRAO_1_COMPLETA, PADRAO_2_SERIAL, PADRAO_2_PPPOE):
+        if self._classe(identificador) not in _REPROVISIONAVEIS:
             # A ONT não tem correspondência com a planilha (padrão 3,
             # divergência ou ambiguidade): não há o que reprovisionar.
             return
-        if not self.controle.verificar_limite(self.controle.processados):
+        if self.controle.limite_atingido():
             return
-        _checar_tempo(self.controle)
+        self.controle.verificar_tempo()
         self.controle.aguardar()
         self.controle.processados += 1
         self.controle.registrar_pausa()
@@ -331,10 +354,8 @@ class Orquestrador:
                 self._executar(dados)
         except ErroOperacao as erro:
             self.controle.registrar_falha()
-            self.resultados[chave_ont(dados)] = {
-                "classe": ESTADO_INCONCLUSIVO,
-                "motivo": "falha na execução: %s" % erro,
-            }
+            self.resultados[identificador] = _resultado(
+                ESTADO_INCONCLUSIVO, "falha na execução: %s" % erro)
 
     def _serial_permitido(self, serial):
         """Indica se a CPE é de um equipamento suportado pela OLT.
@@ -375,13 +396,22 @@ class Orquestrador:
 
     def _filtrar_por_planilha(self):
         """Indica se a triagem por planilha está ligada."""
-        valor = str(self.configuracao.get("filtrar_por_planilha") or "sim")
-        return valor.strip().lower() in ("1", "sim", "yes", "true")
+        return _ligado(self.configuracao.get("filtrar_por_planilha") or "sim")
+
+    def _concluidos_da_campanha(self):
+        """ONTs registradas como SUCESSO numa campanha anterior.
+
+        Com `--reexecutar` o registro é ignorado e elas entram de novo.
+        """
+        if self._reexecutar():
+            return set()
+        return {identificador
+                for identificador, info in self.registro.items()
+                if info.get("classe") == ESTADO_SUCESSO}
 
     def _reexecutar(self):
         """Indica se o operador pediu para repetir ONTs já concluídas."""
-        valor = str(self.configuracao.get("reexecutar") or "")
-        return valor.strip().lower() in ("1", "sim", "yes", "true")
+        return _ligado(self.configuracao.get("reexecutar"))
 
     def _ja_tem_o_perfil_desejado(self, estado_atual):
         """Indica se a ONT já usa o line-profile configurado.
@@ -389,8 +419,7 @@ class Orquestrador:
         Reprovisionar de novo uma ONT já configurada só geraria retrabalho
         (e um breve período sem serviço) na CPE do cliente.
         """
-        if self.configuracao.get("reprovisionar_ja_configuradas") in (
-                "1", "sim", "yes", "true"):
+        if _ligado(self.configuracao.get("reprovisionar_ja_configuradas")):
             return False
         atual = estado_atual.get("lineprofile_atual")
         if not atual:
@@ -408,29 +437,22 @@ class Orquestrador:
         # identificador do service-port, que vem da listagem em cache.
         service_port = self._service_port_id(
             dados["interface"], dados["porta"], dados["ont_id"])
+        identificador = chave_ont(dados)
         if not service_port:
-            self.resultados[chave_ont(dados)] = {
-                "classe": ESTADO_INCONCLUSIVO,
-                "motivo": "service-port original não identificado",
-            }
+            self.resultados[identificador] = _resultado(
+                ESTADO_INCONCLUSIVO, "service-port original não identificado")
             self._salvar()
             return
         passos = montar_passos(dados["interface"], configuracao,
                                {"service_port": service_port})
-        identificador = chave_ont(dados)
         self.resultados[identificador]["passos"] = passos
         for comando in passos:
-            if comando.startswith("display"):
-                continue
             self.sessao.alterar(comando)
             self.controle.registrar_sucesso()
         # Chegar ao fim da sequência é o critério de sucesso: um comando
         # recusado pela OLT interrompe a execução e a ONT fica
         # INCONCLUSIVA, com o motivo do erro.
-        self.resultados[identificador] = {
-            "classe": ESTADO_SUCESSO,
-            "motivo": "",
-        }
+        self.resultados[identificador] = _resultado(ESTADO_SUCESSO)
         self.registro[identificador] = {
             "classe": ESTADO_SUCESSO,
             "motivo": "",
@@ -488,11 +510,10 @@ class Orquestrador:
         """
         servico = _servico_da_ont(
             self._listar_servicos(), interface, porta, ont_id)
-        if servico:
-            return servico["id"]
-        return None
+        return servico["id"] if servico else None
 
-    def _dados(self, atual):
+    def _dados_da_ont(self, atual):
+        """Converte uma linha da listagem nos dados de trabalho da ONT."""
         fsp = atual.get("F/S/P") or ""
         partes = fsp.split("/")
         if len(partes) < 2:
@@ -506,7 +527,6 @@ class Orquestrador:
             "senha": atual.get("senha") or "",
             "gemport": atual.get("gemport") or "",
             "descricao": atual.get("Description") or "",
-            "situacao": atual.get("estado") or "",
         }
 
 

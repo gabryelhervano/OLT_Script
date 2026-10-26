@@ -157,8 +157,9 @@ def criar_transporte():
     return transporte
 
 
-def main():
-    configuracao = {
+def configuracao_de_exemplo():
+    """Configuração mínima: o essencial é interface, perfis e prioridade."""
+    return {
         "host": "127.0.0.1",
         "porta": "22",
         "usuario": "",
@@ -172,7 +173,11 @@ def main():
         "portas": "0-15",
         "maximo": 10,
     }
-    registros = [
+
+
+def registros_de_exemplo():
+    """Dois registros no formato da planilha PPPoE."""
+    return [
         {
             "usuario": "joao",
             "senha": "1234",
@@ -188,6 +193,11 @@ def main():
             "estado": "VALIDO",
         },
     ]
+
+
+def main():
+    configuracao = configuracao_de_exemplo()
+    registros = registros_de_exemplo()
     indice_por_serial, indice_por_usuario = script.indexar(registros)
     transporte = criar_transporte()
     orquestrador = script.Orquestrador(

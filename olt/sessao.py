@@ -39,6 +39,13 @@ MARCAS_DE_ERRO = (
     "% too many parameters",
 )
 
+# Marcas de comando que a OLT não reconhece. Valem para as consultas de
+# leitura também: um `display` inexistente não significa erro na ONT.
+_MARCAS_DE_COMANDO_DESCONHECIDO = (
+    "unknown command", "unrecognized command", "incomplete command",
+    "wrong parameter", "parameter error", "too many parameters",
+)
+
 
 def erro_na_resposta(saida):
     """Devolve a linha de erro da resposta da CLI, se houver."""
@@ -50,13 +57,23 @@ def erro_na_resposta(saida):
 
 
 class Transporte:
-    """Interface mínima usada pela camada SSH; permite simulação em testes."""
+    """Base comum às sessões: define o observador do modo `--debug`.
+
+    A sessão SSH e a simulada trocam com a OLT do mesmo jeito, por isso a
+    vigilância da troca fica num único lugar.
+    """
 
     def executar(self, comando):
         raise NotImplementedError
 
     def fechar(self):
         pass
+
+    def _monitorar(self, comando, saida, alteracao):
+        """Repassa a troca ao modo debug, exatamente como foi trocada."""
+        if self.monitor is None:
+            return
+        self.monitor(comando, saida, alteracao)
 
 
 RESPOSTA_OK = """{ <cr>||<K> }:
@@ -100,17 +117,11 @@ class SessaoSimulada(Transporte):
         self._monitorar(comando, saida, alteracao)
         return saida
 
-    def _monitorar(self, comando, saida, alteracao):
-        """Repassa a troca ao modo debug, exatamente como foi trocada."""
-        if self.monitor is None:
-            return
-        self.monitor(comando, saida, alteracao)
-
     def fechar(self):
         self.conectada = False
 
 
-class SessaoSSH:
+class SessaoSSH(Transporte):
     """Conexão SSH real com o CLI Huawei, com leitura controlada e timeout."""
 
     def __init__(self, configuracao, monitor=None):
@@ -202,16 +213,6 @@ class SessaoSSH:
             raise ErroOperacao("a OLT recusou o comando: %s" % erro)
         return saida
 
-    def _monitorar(self, comando, saida, alteracao):
-        """Repassa a troca ao modo debug, sem edição.
-
-        O que a CLI ecoa é o que aparece: é assim que se enxerga um
-        comando truncado ou uma sessão dessincronizada.
-        """
-        if self.monitor is None:
-            return
-        self.monitor(comando, saida, alteracao)
-
     def _entrar_em_enable(self):
         """Entra no modo privilegiado (`enable`), exigido por parte das CLIs.
 
@@ -228,7 +229,7 @@ class SessaoSSH:
             saida = self._executar_enable(comando, senha)
             if "#" in saida:
                 return
-        logger.warning("modo privilegiado (enable) nao confirmado: %s",
+        logger.warning("modo privilegiado (enable) não confirmado: %s",
                        resumo_texto(saida))
 
     def _executar_enable(self, comando, senha):
@@ -276,7 +277,7 @@ class SessaoSSH:
         for comando in candidatos:
             saida = self._tentar_comando(comando, enter_extra=True)
             if not _comando_desconhecido(saida):
-                logger.info("paginacao da CLI desativada (%s)", comando)
+                logger.info("paginação da CLI desativada (%s)", comando)
                 self._undo_paginacao = _UNDO_PAGINACAO.get(
                     comando, "undo scroll")
                 return
@@ -284,7 +285,7 @@ class SessaoSSH:
         if self._tentar_na_visao_de_configuracao(candidatos):
             return
         logger.warning(
-            "a CLI nao aceitou nenhum comando de desativacao da paginacao "
+            "a CLI não aceitou nenhum comando de desativação da paginação "
             "(%s); listagens longas podem expirar", ", ".join(candidatos))
 
     def _tentar_na_visao_de_configuracao(self, candidatos):
@@ -295,7 +296,7 @@ class SessaoSSH:
         for comando in candidatos:
             saida = self._tentar_comando(comando)
             if not _comando_desconhecido(saida):
-                logger.info("paginacao da CLI desativada (%s, em system-view)",
+                logger.info("paginação da CLI desativada (%s, em system-view)",
                             comando)
                 self._undo_paginacao = _UNDO_PAGINACAO.get(
                     comando, "undo scroll")
@@ -315,9 +316,9 @@ class SessaoSSH:
             # A MA5800 usa "(config)"; a VRP padrão usa "[~Nome]".
             if ("(" in saida or "[" in saida) and \
                     not _comando_desconhecido(saida):
-                logger.info("visao de configuracao ativa (%s)", comando)
+                logger.info("visão de configuração ativa (%s)", comando)
                 return True
-        logger.warning("nao foi possivel entrar na visao de configuracao")
+        logger.warning("não foi possível entrar na visão de configuração")
         return False
 
     def _enviar_comando(self, comando, enter_extra=True):
@@ -398,53 +399,51 @@ class SessaoSSH:
             if atraso:
                 time.sleep(atraso)
 
+    def _numero(self, chave, padrao, tipo):
+        """Número lido da configuração; o padrão vale quando é inválido."""
+        try:
+            return tipo(self.configuracao.get(chave) or padrao)
+        except (TypeError, ValueError):
+            return padrao
+
     @property
     def largura(self):
         """Largura do terminal (evita que a OLT quebre as linhas longas)."""
-        try:
-            return int(self.configuracao.get("largura") or 512)
-        except (TypeError, ValueError):
-            return 512
+        return self._numero("largura", 512, int)
 
     @property
     def altura(self):
         """Altura do terminal reportada à OLT."""
-        try:
-            return int(self.configuracao.get("altura") or 1000)
-        except (TypeError, ValueError):
-            return 1000
+        return self._numero("altura", 1000, int)
 
     @property
     def atraso_tecla(self):
         """Pausa entre caracteres enviados (evita perda de caracteres)."""
-        try:
-            return float(self.configuracao.get("atraso_tecla") or 0.01)
-        except (TypeError, ValueError):
-            return 0.01
+        return self._numero("atraso_tecla", 0.01, float)
 
     def _ler_ate(self, predicado, timeout):
         """Lê a saída até o predicado ser satisfeito (ou o timeout)."""
         inicio = time.monotonic()
-        partes = []
+        texto = ""
         while True:
             disponivel, _, _ = select.select([self.sessao], [], [], 1)
             if not disponivel:
-                if predicado("".join(partes)):
+                if predicado(texto):
                     break
                 if time.monotonic() - inicio > timeout:
-                    self._saida_parcial = "".join(partes)
+                    self._saida_parcial = texto
                     raise ErroOperacao("timeout na execução do comando")
                 continue
             dados = self.sessao.recv(4096)
             if not dados:
                 break
-            partes.append(dados.decode("utf-8", "replace"))
-            if predicado("".join(partes)):
+            texto += dados.decode("utf-8", "replace")
+            if predicado(texto):
                 # Coleta o que ainda estiver chegando: sem isso a resposta
                 # seguinte seria lida no comando seguinte (desalinhamento).
-                partes.append(self._drenar())
+                texto += self._drenar()
                 break
-        return "".join(partes)
+        return texto
 
     def _drenar(self, espera=0.4):
         """Recolhe dados que ainda estejam chegando após o prompt."""
@@ -471,25 +470,32 @@ class SessaoSSH:
         return bool(re.search(r"[#>]\s*$", ultima))
 
     def fechar(self):
-        if self.conectada:
-            # Sai da visão de configuração e restaura a paginação da CLI
-            # antes de encerrar (o `undo scroll` devolve o padrão).
-            try:
-                self._tentar_comando("quit", timeout=5)
-            except Exception:
-                pass
-            if self._undo_paginacao:
-                try:
-                    self._tentar_comando(self._undo_paginacao, timeout=5)
-                    logger.info("paginacao da CLI restaurada (%s)",
-                                self._undo_paginacao)
-                except Exception:
-                    logger.exception("falha ao restaurar a paginação da CLI")
-            try:
-                self.sessao.close()
-            except Exception:
-                logger.exception("falha ao encerrar a sessão SSH")
+        """Sai da visão de configuração, restaura a paginação e encerra."""
+        if not self.conectada:
+            return
+        self._encerrar_sem_erro("quit")
+        if self._undo_paginacao and \
+                self._encerrar_sem_erro(self._undo_paginacao):
+            logger.info("paginação da CLI restaurada (%s)",
+                        self._undo_paginacao)
+        self._fechar_canal()
         self.conectada = False
+
+    def _encerrar_sem_erro(self, comando):
+        """Envia um comando de despedida; falhas não interrompem o fecho."""
+        try:
+            self._tentar_comando(comando, timeout=5)
+            return True
+        except Exception:
+            logger.exception("falha ao enviar %r ao encerrar", comando)
+            return False
+
+    def _fechar_canal(self):
+        """Fecha o canal SSH; falhas aqui não interrompem o programa."""
+        try:
+            self.sessao.close()
+        except Exception:
+            logger.exception("falha ao encerrar a sessão SSH")
 
 
 def conectar_ssh(configuracao, monitor=None):
@@ -509,6 +515,4 @@ class Simulador(SessaoSimulada):
 def _comando_desconhecido(saida):
     """Indica se a OLT recusou o comando enviado."""
     texto = (saida or "").lower()
-    return any(marca in texto for marca in (
-        "unknown command", "unrecognized command", "incomplete command",
-        "wrong parameter", "parameter error", "too many parameters"))
+    return any(marca in texto for marca in _MARCAS_DE_COMANDO_DESCONHECIDO)

@@ -50,12 +50,14 @@ def ler_planilha(caminho):
         livro.close()
     if not linhas:
         return [], []
-    cabecalho = _cabecalho(linhas)
-    primeira = 2 if cabecalho is not None else 1
-    atribuicao = cabecalho
+    # Com um cabeçalho reconhecível, a primeira linha é dele e os nomes
+    # das colunas definem a ordem; sem cabeçalho, vale a ordem padrão.
+    atribuicao = _cabecalho(linhas)
+    dados = linhas[1:] if atribuicao is not None else linhas
+    primeira_linha = 2 if atribuicao is not None else 1
     registros = []
     problemas = []
-    for numero, linha in enumerate(linhas[primeira - 1:], start=primeira):
+    for numero, linha in enumerate(dados, start=primeira_linha):
         dicionario = _converter_celulas(_celulas(linha), atribuicao)
         estado, motivo = _validar(dicionario)
         if estado == "VALIDO":
@@ -78,9 +80,9 @@ def _celulas(linha):
 
 
 def _eh_mac(valor):
-    if _PADRAO_MAC.match(valor) is None:
-        return False
-    return valor.lower() not in _MASCARAS_MAC
+    """Indica se o valor é um MAC plausível (não uma máscara de fábrica)."""
+    return (_PADRAO_MAC.match(valor) is not None
+            and valor.lower() not in _MASCARAS_MAC)
 
 
 def _normalizar_mac(valor):
@@ -95,9 +97,9 @@ def _normalizar_mac(valor):
 
 
 def _eh_serial(valor):
-    if _PADRAO_SERIAL.match(valor) is None:
-        return False
-    return valor.lower() not in _MASCARAS_SERIAL
+    """Indica se o valor é um serial plausível (não uma máscara)."""
+    return (_PADRAO_SERIAL.match(valor) is not None
+            and valor.lower() not in _MASCARAS_SERIAL)
 
 
 def _eh_marca_mac(valor):
@@ -150,6 +152,7 @@ def _converter_celulas(celulas, atribuicao):
 
 
 def _validar(dicionario):
+    """Confere a linha da planilha; devolve o estado e o motivo."""
     usuario = dicionario.get(_CHAVE_USUARIO, "")
     senha = dicionario.get(_CHAVE_SENHA, "")
     mac = dicionario.get(_CHAVE_MAC, "")
@@ -157,22 +160,23 @@ def _validar(dicionario):
     if not senha:
         return "INVALIDO", "senha ausente"
     if _eh_marca_mac(mac):
-        return "IGNORADO", "ausencia de informacao no MAC"
+        return "IGNORADO", "ausência de informação no MAC"
     if _eh_marca_serial(serial):
-        return "IGNORADO", "ausencia de informacao no serial"
+        return "IGNORADO", "ausência de informação no serial"
     if usuario and not _eh_usuario(usuario):
-        return "INVALIDO", "usuario invalido"
+        return "INVALIDO", "usuário inválido"
     if mac and not _eh_mac(mac):
-        return "INVALIDO", "MAC invalido"
+        return "INVALIDO", "MAC inválido"
     if serial and not _eh_serial(serial):
-        return "INVALIDO", "serial invalido"
+        return "INVALIDO", "serial inválido"
     if not usuario and not serial:
         return "INVALIDO", "sem identificador para associação"
     return "VALIDO", ""
 
 
 def _eh_usuario(valor):
-    return len(valor) > 0
+    """Indica se a linha traz usuário PPPoE."""
+    return bool(valor)
 
 
 def _marcar_duplicados(registros, problemas):

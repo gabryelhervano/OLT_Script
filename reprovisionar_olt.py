@@ -17,11 +17,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import olt  # noqa: E402
 from olt.comandos import _validar_prioridade  # noqa: E402
 from olt.configuracao import (carregar_configuracao,  # noqa: E402
                               portas_configuradas)
-from olt.descoberta import (capturar_estado, listar_onts,  # noqa: E402
-                            listar_perfis, vlan_dominante)
+from olt.descoberta import (_consultar_configuracao_atual,  # noqa: E402
+                            capturar_estado, listar_onts, listar_perfis,
+                            vlan_dominante)
 from olt.erros import ErroOperacao  # noqa: E402
 from olt.interacao import configurar_codificacao  # noqa: E402
 from olt.orquestrador import Orquestrador  # noqa: E402
@@ -165,20 +167,15 @@ def _executar_diagnostico(sessao, configuracao, seletor):
     """Lê o estado de cada ONT e mostra o que foi descoberto (sem alterar)."""
     interface = configuracao["interface"]
     portas = portas_configuradas(configuracao)
-    onts = listar_onts(sessao, interface, portas, alvo=seletor or None)
-    if seletor.get("ont_id") is not None:
-        onts = {chave: ont for chave, ont in onts.items()
-                if chave == seletor["ont_id"]}
-    if seletor.get("serial"):
-        onts = {chave: ont for chave, ont in onts.items()
-                if (ont.get("Serial") or "") == seletor["serial"]}
+    onts = _restringir_onts(
+        listar_onts(sessao, interface, portas, alvo=seletor or None), seletor)
     if not onts:
         print("nenhuma ONT encontrada em %s (portas %s)"
               % (interface, ",".join(str(p) for p in portas)))
         return
     print("ONTs encontradas: %d" % len(onts))
     try:
-        config_atual = _configuracao_atual(sessao)
+        config_atual = _consultar_configuracao_atual(sessao)
     except ErroOperacao as erro:
         print("configuração corrente indisponível: %s" % erro)
         config_atual = {"perfis": {}, "onts": {}}
@@ -193,35 +190,53 @@ def _executar_diagnostico(sessao, configuracao, seletor):
     print("prioridade: %s (config.ini)"
           % (configuracao.get("prioridade") or "não configurada"))
     for ont_id in sorted(onts):
-        ont = onts[ont_id]
-        partes = (ont.get("F/S/P") or "").split("/")
-        porta = int(partes[-1]) if partes[-1].isdigit() else 0
-        print("")
-        print("ONT %d (%s) serial=%s descricao=%s estado=%s"
-              % (ont_id, ont.get("F/S/P"), ont.get("Serial"),
-                 ont.get("Description"), ont.get("estado")))
-        try:
-            estado = capturar_estado(
-                sessao, interface, porta, ont_id, config_atual,
-                vlan_olt=vlan_olt)
-        except ErroOperacao as erro:
-            print("   INCONCLUSIVO: %s" % erro)
-            continue
-        for campo in ("usuario", "vlane", "prioridade", "lineprofile_atual",
-                      "srvprofile", "gemport", "user_vlan", "service_vlan",
-                      "service_port", "tipo_wan", "status_conexao"):
-            valor = estado.get(campo)
-            if valor in (None, ""):
-                print("   %-17s: (não identificado)" % campo)
-            else:
-                print("   %-17s: %s" % (campo, valor))
-        print("   %-17s: %s (configurado)"
-              % ("line-profile", configuracao["lineprofile"]))
-        print("   %-17s: %s (configurado)"
-              % ("tr069-profile", configuracao["tr069profile"]))
-        print("   %-17s: %s (configurado)"
-              % ("wan-profile", configuracao["wanprofile"]))
-        _exibir_perfis_da_olt(sessao, configuracao)
+        _mostrar_estado_da_ont(sessao, interface, ont_id, onts[ont_id],
+                               config_atual, configuracao, vlan_olt)
+    # Os perfis da OLT são os mesmos para todas as ONTs: listados uma vez,
+    # no fim, para não repetir a mesma leitura ONT por ONT.
+    print("")
+    _exibir_perfis_da_olt(sessao, configuracao)
+
+
+def _restringir_onts(onts, seletor):
+    """Mantém só as ONTs pedidas com `--ont-id` e `--serial`."""
+    alvo_id = seletor.get("ont_id")
+    alvo_serial = seletor.get("serial")
+    return {chave: ont for chave, ont in onts.items()
+            if (alvo_id is None or chave == alvo_id)
+            and (not alvo_serial
+                 or (ont.get("Serial") or "") == alvo_serial)}
+
+
+def _mostrar_estado_da_ont(sessao, interface, ont_id, ont, config_atual,
+                           configuracao, vlan_olt):
+    """Mostra o que a leitura descobriu de uma ONT."""
+    partes = (ont.get("F/S/P") or "").split("/")
+    porta = int(partes[-1]) if partes[-1].isdigit() else 0
+    print("")
+    print("ONT %d (%s) serial=%s descricao=%s estado=%s"
+          % (ont_id, ont.get("F/S/P"), ont.get("Serial"),
+             ont.get("Description"), ont.get("estado")))
+    try:
+        estado = capturar_estado(sessao, interface, porta, ont_id,
+                                 config_atual, vlan_olt=vlan_olt)
+    except ErroOperacao as erro:
+        print("   INCONCLUSIVO: %s" % erro)
+        return
+    for campo in ("usuario", "vlane", "prioridade", "lineprofile_atual",
+                  "srvprofile", "gemport", "user_vlan", "service_vlan",
+                  "service_port", "tipo_wan", "status_conexao"):
+        valor = estado.get(campo)
+        if valor in (None, ""):
+            print("   %-17s: (não identificado)" % campo)
+        else:
+            print("   %-17s: %s" % (campo, valor))
+    # Os perfis aplicáveis vêm do config.ini: o identificador é o mesmo
+    # para toda a campanha.
+    for chave, rotulo in (("lineprofile", "line-profile"),
+                          ("tr069profile", "tr069-profile"),
+                          ("wanprofile", "wan-profile")):
+        print("   %-17s: %s (configurado)" % (rotulo, configuracao[chave]))
 
 
 def _exibir_perfis_da_olt(sessao, configuracao):
@@ -248,12 +263,6 @@ def _exibir_perfis_da_olt(sessao, configuracao):
             # O ID configurado não existe na OLT: mostrar o que existe.
             print("   %-17s: %s" % ("disponíveis", ", ".join(
                 "%d (%s)" % item for item in sorted(lista.items()))))
-
-
-def _configuracao_atual(sessao):
-    from olt.descoberta import _consultar_configuracao_atual
-
-    return _consultar_configuracao_atual(sessao)
 
 
 def _executar_teste_cli(sessao, configuracao):
@@ -338,29 +347,32 @@ def _abrir_sessao(configuracao, executar, simular, monitor=None):
     try:
         return conectar_ssh(configuracao, monitor=monitor)
     except Exception as erro:
-        print("ERRO: nao foi possivel conectar na OLT: %s" % erro)
-        if "known_hosts" in str(erro):
-            print("     a chave do servidor nao esta em ~/.ssh/known_hosts;")
-            print("     acrescente com:")
-            print("       ssh-keyscan -H %s >> ~/.ssh/known_hosts"
-                  % configuracao["host"])
-        elif "Authentication" in str(erro) or "authentication" in str(erro):
-            print("     a OLT recusou a autenticacao. conferir:")
-            print("       - usuario e senha em config.ini")
-            print("       - se a conta exige troca de senha no "
-                  "primeiro acesso")
-            print("       - teste manual: ssh %s@%s"
-                  % (configuracao["usuario"], configuracao["host"]))
-        print("     use --mock para rodar sem OLT (dados simulados).")
+        print("ERRO: não foi possível conectar na OLT: %s" % erro)
+        _aconselhar_erro_de_conexao(erro, configuracao)
         raise SystemExit(1)
 
 
+def _aconselhar_erro_de_conexao(erro, configuracao):
+    """Sugere o próximo passo para os erros de conexão mais comuns."""
+    if "known_hosts" in str(erro):
+        print("     a chave do servidor não está em ~/.ssh/known_hosts;")
+        print("     acrescente com:")
+        print("       ssh-keyscan -H %s >> ~/.ssh/known_hosts"
+              % configuracao["host"])
+    elif "Authentication" in str(erro) or "authentication" in str(erro):
+        print("     a OLT recusou a autenticação. Conferir:")
+        print("       - usuário e senha em config.ini")
+        print("       - se a conta exige troca de senha no primeiro acesso")
+        print("       - teste manual: ssh %s@%s"
+              % (configuracao["usuario"], configuracao["host"]))
+    print("     use --mock para rodar sem OLT (dados simulados).")
+
+
 def main(argv=None):
+    """Ponto de entrada: lê os argumentos e despacha para o modo pedido."""
     configurar_codificacao()
     argumentos = _parse_argumentos(argv)
     if argumentos.versao:
-        import olt
-
         print("reprovisionar_olt %s" % olt.__version__)
         return 0
     if not argumentos.arquivo:
@@ -370,6 +382,27 @@ def main(argv=None):
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
+    configuracao = _configuracao_da_execucao(argumentos)
+
+    # Só os modos que não reconfiguram a ONT dispensam a prioridade.
+    if not (argumentos.testar_ssh or argumentos.diagnostico):
+        erro = _erro_de_prioridade(configuracao)
+        if erro:
+            print(erro)
+            return 1
+
+    monitor = _anunciar_modo(argumentos)
+    registros, problemas = ler_planilha(argumentos.arquivo)
+    print("planilha: %s" % _resumo_planilha(registros, problemas))
+    _exibir_origem_configuracao(configuracao)
+
+    if argumentos.testar_ssh:
+        return _testar_conexao(configuracao, argumentos, monitor)
+    return _reprovisionar(argumentos, configuracao, registros, monitor)
+
+
+def _configuracao_da_execucao(argumentos):
+    """Configuração do operador, com o que a linha de comando sobrepõe."""
     configuracao = carregar_configuracao(argumentos.configuracao or None)
     configuracao["olt"] = argumentos.olt or configuracao["host"]
     configuracao["maximo"] = argumentos.limite
@@ -379,69 +412,72 @@ def main(argv=None):
         configuracao["reexecutar"] = "true"
     if argumentos.tempo_maximo:
         configuracao["tempo_maximo"] = argumentos.tempo_maximo
+    return configuracao
 
-    # Só os modos que não reconfiguram a ONT dispensam a prioridade.
-    if not (argumentos.testar_ssh or argumentos.diagnostico):
-        erro = _erro_de_prioridade(configuracao)
-        if erro:
-            print(erro)
-            return 1
 
-    executar = argumentos.executar
-    if executar:
+def _anunciar_modo(argumentos):
+    """Mostra o modo escolhido e devolve o observador do `--debug`."""
+    if argumentos.executar:
         print("modo: execução real (haverá confirmação por card)")
     elif argumentos.mock:
         print("modo: simulação local (OLT simulada, sem conexão)")
     else:
         print("modo: DRY-RUN na OLT (somente leitura, nada será alterado)")
-    monitor = _monitor_terminal if argumentos.debug else None
-    if monitor:
-        print("modo debug: terminal da OLT exibido")
+    if not argumentos.debug:
+        return None
+    print("modo debug: terminal da OLT exibido")
+    return _monitor_terminal
 
-    registros, problemas = ler_planilha(argumentos.arquivo)
-    print("planilha: %s" % _resumo_planilha(registros, problemas))
-    _exibir_origem_configuracao(configuracao)
-    indice_por_serial, indice_por_usuario = indexar(registros)
-    seletor = {"ont_id": argumentos.ont_id, "serial": argumentos.serial}
 
-    if argumentos.testar_ssh:
-        sessao = _abrir_sessao(configuracao, executar, argumentos.mock,
-                               monitor=monitor)
-        try:
-            print("conexão SSH ok")
-            _executar_teste_cli(sessao, configuracao)
-        finally:
-            sessao.fechar()
-        print("concluído")
-        return 0
-
-    sessao = _abrir_sessao(configuracao, executar, argumentos.mock,
-                           monitor=monitor)
+def _testar_conexao(configuracao, argumentos, monitor):
+    """Conecta e manda comandos inofensivos (modo `--test-ssh`)."""
+    sessao = _abrir_sessao(configuracao, argumentos.executar,
+                           argumentos.mock, monitor=monitor)
     try:
-        if argumentos.diagnostico:
-            _executar_diagnostico(sessao, configuracao, seletor)
-            return 0
-        orquestrador = Orquestrador(
-            configuracao=configuracao,
-            sessao=sessao,
-            executar_alteracoes=executar,
-            seletor=seletor,
-        )
-        resultados = orquestrador.executar(
-            registros, indice_por_serial, indice_por_usuario)
-        _exibir_detalhes(resultados)
-        _exibir_configuracao(configuracao)
-        if not executar:
-            _exibir_passos(resultados)
-        if argumentos.roteiro:
-            _exibir_roteiro(sessao, resultados)
-        _exibir_contagem(resultados)
-        if argumentos.relatorio:
-            _gravar_resultados(argumentos.relatorio, resultados, configuracao)
+        print("conexão SSH ok")
+        _executar_teste_cli(sessao, configuracao)
     finally:
         sessao.fechar()
     print("concluído")
     return 0
+
+
+def _reprovisionar(argumentos, configuracao, registros, monitor):
+    """Classifica as ONTs e executa (ou só mostra) o reprovisionamento."""
+    seletor = {"ont_id": argumentos.ont_id, "serial": argumentos.serial}
+    sessao = _abrir_sessao(configuracao, argumentos.executar,
+                           argumentos.mock, monitor=monitor)
+    try:
+        if argumentos.diagnostico:
+            _executar_diagnostico(sessao, configuracao, seletor)
+            return 0
+        indice_por_serial, indice_por_usuario = indexar(registros)
+        orquestrador = Orquestrador(
+            configuracao=configuracao,
+            sessao=sessao,
+            executar_alteracoes=argumentos.executar,
+            seletor=seletor,
+        )
+        resultados = orquestrador.executar(
+            registros, indice_por_serial, indice_por_usuario)
+        _mostrar_resultados(resultados, sessao, configuracao, argumentos)
+    finally:
+        sessao.fechar()
+    print("concluído")
+    return 0
+
+
+def _mostrar_resultados(resultados, sessao, configuracao, argumentos):
+    """Exibe o resultado na ordem que o operador lê, e grava o relatório."""
+    _exibir_detalhes(resultados)
+    _exibir_configuracao(configuracao)
+    if not argumentos.executar:
+        _exibir_passos(resultados)
+    if argumentos.roteiro:
+        _exibir_roteiro(sessao, resultados)
+    _exibir_contagem(resultados)
+    if argumentos.relatorio:
+        _gravar_resultados(argumentos.relatorio, resultados, configuracao)
 
 
 def _gravar_resultados(caminho, resultados, configuracao):

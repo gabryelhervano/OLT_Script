@@ -78,9 +78,9 @@ operador.
   correspondência na planilha, comparando o serial e a descrição (que é o
   usuário PPPoE). Isso evita as consultas de leitura das ONTs fora da
   campanha. A opção `filtrar_por_planilha = nao` consulta todas.
-- Cada ONT reprovisionada tem seu estado lido três vezes (descoberta,
-  reconferência antes da alteração e validação final), o que protege contra
-  mudanças externas entre as etapas.
+- O estado de cada ONT é lido uma única vez, na triagem. Na execução o
+  script reaproveita o identificador do service-port já descoberto, sem nova
+  leitura — a OLT penaliza sessões repetidas.
 
 ## Segurança de credenciais
 

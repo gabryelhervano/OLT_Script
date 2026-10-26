@@ -34,7 +34,7 @@ def classificar(ont_atual, indice_por_serial, indice_por_usuario):
         if registro_serial is registro_usuario:
             return {"classe": PADRAO_1_COMPLETA, "registro": registro_serial}
         return {"classe": BLOQUEADA_DIVERGENCIA,
-                "motivo": "divergencia entre serial e usuário"}
+                "motivo": "divergência entre serial e usuário"}
     if registro_serial is not None:
         return {"classe": PADRAO_2_SERIAL, "registro": registro_serial}
     if registro_usuario is not None:

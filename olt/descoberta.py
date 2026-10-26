@@ -134,7 +134,7 @@ _PALAVRAS_CONTINUACAO = (
 )
 
 
-def _desembrulhar(linhas, largura=79):
+def _desembrulhar(linhas):
     """Junta as linhas truncadas pelo terminal.
 
     A OLT quebra as linhas longas na largura do terminal e a continuação
@@ -173,55 +173,72 @@ def _consultar_configuracao_atual(sessao):
         if achado:
             perfis["linha"][achado.group("nome")] = int(achado.group("id"))
             continue
-        achado = _PADRAO_ONT_ADD.search(linha)
-        if achado:
-            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
-            dados_ont = onts.setdefault(chave, {})
-            dados_ont["lineprofile"] = int(achado.group("lineprofile"))
-            srvprofile = _PADRAO_ONT_SRVPROFILE.search(linha)
-            if srvprofile:
-                dados_ont["srvprofile"] = int(srvprofile.group("srvprofile"))
-            descricao = _PADRAO_ONT_DESC.search(linha)
-            if descricao:
-                dados_ont["descricao"] = descricao.group("descricao")
-            continue
-        achado = _PADRAO_ONT_TR069.search(linha)
-        if achado:
-            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
-            onts.setdefault(chave, {})["tr069profile"] = int(
-                achado.group("profile"))
-            onts[chave]["tr069"] = True
-            continue
-        achado = _PADRAO_ONT_INTERNET.search(linha)
-        if achado:
-            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
-            onts.setdefault(chave, {})["internet"] = True
-            continue
-        achado = _PADRAO_ONT_WAN.search(linha)
-        if achado:
-            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
-            onts.setdefault(chave, {})["wanprofile"] = int(
-                achado.group("profile"))
-            onts[chave]["wan"] = True
-            continue
-        achado = _PADRAO_ONT_NATIVE_VLAN.search(linha)
-        if achado:
-            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
-            onts.setdefault(chave, {})["native_vlan"] = True
-            continue
-        achado = _PADRAO_ONT_IPCONFIG.search(linha)
-        if achado:
-            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
-            dados_ont = onts.setdefault(chave, {})
-            dados_ont["vlan"] = achado.group("vlan")
-            dados_ont["prioridade"] = achado.group("prioridade")
-            continue
-        achado = _PADRAO_ONT_USUARIO.search(linha)
-        if achado:
-            chave = (int(achado.group("porta")), int(achado.group("ont_id")))
-            onts.setdefault(chave, {})["usuario"] = achado.group("usuario")
-            continue
+        _indexar_linha_de_ont(linha, onts)
     return {"perfis": perfis, "onts": onts}
+
+
+def _indexar_linha_de_ont(linha, onts):
+    """Guarda o que a linha de configuração de uma ONT revela.
+
+    Cada comando traz uma parte: perfis e descrição, TR-069, internet,
+    WAN, native-vlan, ipconfig e usuário.
+    """
+    achado = _PADRAO_ONT_ADD.search(linha)
+    if achado:
+        dados_ont = _entrada_da_ont(achado, onts)
+        dados_ont["lineprofile"] = int(achado.group("lineprofile"))
+        srvprofile = _PADRAO_ONT_SRVPROFILE.search(linha)
+        if srvprofile:
+            dados_ont["srvprofile"] = int(srvprofile.group("srvprofile"))
+        descricao = _PADRAO_ONT_DESC.search(linha)
+        if descricao:
+            dados_ont["descricao"] = descricao.group("descricao")
+        return
+
+    achado = _PADRAO_ONT_TR069.search(linha)
+    if achado:
+        dados_ont = _entrada_da_ont(achado, onts)
+        dados_ont["tr069profile"] = int(achado.group("profile"))
+        dados_ont["tr069"] = True
+        return
+
+    achado = _PADRAO_ONT_INTERNET.search(linha)
+    if achado:
+        _entrada_da_ont(achado, onts)["internet"] = True
+        return
+
+    achado = _PADRAO_ONT_WAN.search(linha)
+    if achado:
+        dados_ont = _entrada_da_ont(achado, onts)
+        dados_ont["wanprofile"] = int(achado.group("profile"))
+        dados_ont["wan"] = True
+        return
+
+    achado = _PADRAO_ONT_NATIVE_VLAN.search(linha)
+    if achado:
+        _entrada_da_ont(achado, onts)["native_vlan"] = True
+        return
+
+    achado = _PADRAO_ONT_IPCONFIG.search(linha)
+    if achado:
+        dados_ont = _entrada_da_ont(achado, onts)
+        dados_ont["vlan"] = achado.group("vlan")
+        dados_ont["prioridade"] = achado.group("prioridade")
+        return
+
+    achado = _PADRAO_ONT_USUARIO.search(linha)
+    if achado:
+        _entrada_da_ont(achado, onts)["usuario"] = achado.group("usuario")
+
+
+def _entrada_da_ont(achado, onts):
+    """Recupera (ou cria) a entrada da ONT citada no comando.
+
+    O parâmetro `achado` é o resultado do casamento de um padrão que
+    sempre traz o quadro/porta e o identificador da ONT.
+    """
+    chave = (int(achado.group("porta")), int(achado.group("ont_id")))
+    return onts.setdefault(chave, {})
 
 
 _PADRAO_SERVICE_PORT = re.compile(
@@ -409,60 +426,78 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
     usada na OLT — ela substitui a VLAN da própria ONT em todos os comandos,
     para que toda CPE saia com a mesma VLAN.
     """
-    wan_info = sessao.executar(
-        "display ont wan-info %s %d %d" % (interface, porta, ont_id))
-    ipconfig = _consultar_ipconfig(sessao, interface, porta, ont_id)
-    if servicos is None:
-        servicos = listar_servicos(sessao)
-    servico = _servico_da_ont(servicos, interface, porta, ont_id)
-    campos_wan = _campos(wan_info)
-    campos_ip = _campos(ipconfig)
+    campos_wan, campos_ip, servico = _ler_estado_da_ont(
+        sessao, interface, porta, ont_id, servicos)
+    servico = servico or {}
+    atual = _configuracao_da_ont(config_atual, porta, ont_id)
+    vlane = _vlan_desta_ont(campos_wan, campos_ip, atual, vlan_olt)
+    usuario = (_campo(campos_ip, "PPPoE username", "Username")
+               or atual.get("usuario") or "")
+    prioridade = (_campo(campos_ip, "ONT manage priority", "Manage priority")
+                  or atual.get("prioridade"))
 
-    atual = (config_atual or {}).get("onts", {}).get((porta, ont_id))
-    if atual is None:
-        # A ONT não apareceu na configuração corrente: adota-se a sequência
-        # validada (native-vlan, TR-069, internet e WAN) e os perfis precisam
-        # ser descobertos; se não forem, a ONT fica bloqueada.
-        atual = {
-            "native_vlan": True,
-            "tr069": True,
-            "internet": True,
-            "wan": True,
-        }
     # O srv-profile e o line-profile em uso vêm da linha `ont add`; quando
     # ela não pôde ser lida (linha truncada pelo terminal), o nome
     # informado pelo `display ont profile` resolve o identificador.
-    srvprofile = atual.get("srvprofile")
-    lineprofile_atual = atual.get("lineprofile")
-    usuario = _campo(campos_ip, "PPPoE username", "Username") or \
-        atual.get("usuario") or ""
-    vlane = vlan_olt or _campo(
-        campos_ip, "ONT manage VLAN", "Manage VLAN") or atual.get("vlan")
-    if not vlane:
-        vlane = _campo(campos_wan, "Manage VLAN", "ONT manage VLAN")
-    if not vlane:
-        raise ErroOperacao("VLAN atual não identificada")
-    prioridade = _campo(
-        campos_ip, "ONT manage priority", "Manage priority") or \
-        atual.get("prioridade")
-
     return {
         "usuario": usuario,
         "vlane": vlane,
         "prioridade": prioridade,
         "configuracao": _campo(campos_ip, "ONT config type", "Config type"),
-        "lineprofile_atual": lineprofile_atual,
-        "srvprofile": srvprofile,
-        "gemport": (servico or {}).get("gemport"),
+        "lineprofile_atual": atual.get("lineprofile"),
+        "srvprofile": atual.get("srvprofile"),
+        "gemport": servico.get("gemport"),
         # Com a VLAN da OLT, service-port e user-vlan saem nela. Sem ela,
         # reaproveita-se o service-port que já atende a ONT, para não mudar
         # o mapeamento de serviço que a OLT já tem.
-        "user_vlan": vlan_olt or (servico or {}).get("user-vlan") or vlane,
-        "service_vlan": vlan_olt or (servico or {}).get("vlan") or vlane,
-        "service_port": (servico or {}).get("id"),
+        "user_vlan": vlan_olt or servico.get("user-vlan") or vlane,
+        "service_vlan": vlan_olt or servico.get("vlan") or vlane,
+        "service_port": servico.get("id"),
         "tipo_wan": _campo(campos_wan, "Service type"),
         "status_conexao": _campo(campos_wan, "IPv4 Connection status"),
         "mac": _mac_util(campos_ip, campos_wan),
     }
+
+
+def _ler_estado_da_ont(sessao, interface, porta, ont_id, servicos):
+    """Faz as leituras da ONT e devolve os campos já interpretados.
+
+    São três consultas: WAN, ipconfig e (quando não veio de fora) a
+    listagem de service-ports da OLT, da qual se extrai o que atende a
+    ONT.
+    """
+    wan_info = sessao.executar(
+        "display ont wan-info %s %d %d" % (interface, porta, ont_id))
+    ipconfig = _consultar_ipconfig(sessao, interface, porta, ont_id)
+    if servicos is None:
+        servicos = listar_servicos(sessao)
+    return (_campos(wan_info), _campos(ipconfig),
+            _servico_da_ont(servicos, interface, porta, ont_id))
+
+
+def _configuracao_da_ont(config_atual, porta, ont_id):
+    """O que a configuração corrente diz sobre a ONT.
+
+    Quando a ONT não apareceu nela, adota-se a sequência validada
+    (native-vlan, TR-069, internet e WAN) e os perfis precisam ser
+    descobertos; se não forem, a ONT fica bloqueada.
+    """
+    atual = (config_atual or {}).get("onts", {}).get((porta, ont_id))
+    if atual is not None:
+        return atual
+    return {"native_vlan": True, "tr069": True, "internet": True,
+            "wan": True}
+
+
+def _vlan_desta_ont(campos_wan, campos_ip, atual, vlan_olt):
+    """VLAN da ONT; com a VLAN da OLT em uso, é ela que vale."""
+    vlane = (vlan_olt
+             or _campo(campos_ip, "ONT manage VLAN", "Manage VLAN")
+             or atual.get("vlan"))
+    if not vlane:
+        vlane = _campo(campos_wan, "Manage VLAN", "ONT manage VLAN")
+    if not vlane:
+        raise ErroOperacao("VLAN atual não identificada")
+    return vlane
 
 
