@@ -4,6 +4,24 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.12.0 - 2026-10-26
+
+`--limit` passa a cortar também a classificação, quando é informado na linha
+de comando.
+
+- Com `--limit N`, a contagem para assim que N ONTs entram no fluxo: as ONTs
+  restantes do card não são nem consultadas na OLT, e o corte é anunciado
+  ("card 0/2: limite de N ONTs atingido; as demais não foram classificadas").
+  Em card com dezenas de ONTs isso evita centenas de comandos de leitura e
+  encurta a sessão — que é o que derrubava a conexão após alguns minutos.
+- Sem `--limit`, o comportamento continua o de sempre: o card é classificado
+  inteiro e relatado por completo, e a execução fica no padrão conservador de
+  uma ONT por vez.
+- ONTs descartadas na triagem (sem correspondência, serial fora do perfil,
+  já concluídas) não ocupam vaga: o limite conta só ONTs que entram no fluxo,
+  para entregar o número pedido de reprovisionamentos.
+- `--roteiro --limit 2` mostra a transcrição de duas ONTs numa sessão só.
+
 ## v1.11.0 - 2026-10-26
 
 Refatoração sem mudança no fluxo validado: a sequência enviada à OLT, as

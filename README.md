@@ -66,8 +66,14 @@ python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --roteiro --serial HWTC0D3
 # e no --execute.
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --debug --serial HWTC0D3BDDA7
 
-# Limita a execução a uma ONT (padrão conservador).
-python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --limit 1
+# Com --limit, o número vale para a classificação e para a execução: a
+# contagem para assim que N ONTs entram no fluxo, e as demais não são nem
+# consultadas na OLT. Sem --limit, o card é classificado inteiro (e a
+# execução continua no padrão conservador de uma ONT por vez).
+python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --limit 2
+
+# O mesmo --limit recorta o roteiro: a transcrição de duas ONTs, numa sessão só.
+python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --roteiro --limit 2
 
 # Gera também um relatório CSV do que foi simulado.
 python3 reprovisionar_olt.py --file pppoes-cyber.xlsx --limit 1 --report simulacao.csv

@@ -1904,6 +1904,91 @@ class TestesFluxo(unittest.TestCase):
                     if comando.startswith(("undo", "ont ", "service-port"))]
         self.assertEqual(enviados, [])
 
+    def _plano_com_duas_onts(self):
+        """Planilha com as duas ONTs do card 0/1/4, ambas reprovisionáveis."""
+        registros = [
+            {"interface": "0/1", "porta": 4, "ont_id": 42,
+             "serial": "HWTC0D3BDDA7", "usuario": "joao", "senha": "1234",
+             "estado": "VALIDO"},
+            {"interface": "0/1", "porta": 4, "ont_id": 43,
+             "serial": "HWTC0D3BDDA9", "usuario": "maria", "senha": "1234",
+             "estado": "VALIDO"},
+        ]
+        por_serial = {}
+        por_usuario = {}
+        for registro in registros:
+            por_serial.setdefault(registro["serial"], []).append(registro)
+            por_usuario.setdefault(registro["usuario"], []).append(registro)
+        return registros, por_serial, por_usuario
+
+    def test_limit_explicito_corta_a_classificacao_do_card(self):
+        # Com `--limit` a contagem para assim que o limite é achado: as
+        # ONTs restantes do card nem são consultadas na OLT, o que poupa
+        # leitura e encurta a sessão.
+        import io
+        from contextlib import redirect_stdout
+
+        registros, por_serial, por_usuario = self._plano_com_duas_onts()
+        configuracao = self._configuracao()
+        configuracao["maximo_classificacao"] = 1
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=self.sessao,
+            executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            resultados = orquestrador.executar(
+                registros, por_serial, por_usuario)
+        self.assertIn("0/1/4/42", resultados)
+        self.assertNotIn("0/1/4/43", resultados)
+        # A ONT que ficou de fora não chega sequer a ser lida.
+        self.assertNotIn("display ont wan-info 0/1 4 43",
+                         self.sessao.comandos)
+        # O corte é anunciado, para não parecer que a ONT sumiu.
+        self.assertIn("limite de 1 ONTs atingido", saida.getvalue())
+
+    def test_sem_limit_o_card_e_classificado_inteiro(self):
+        # Sem `--limit` na linha de comando o comportamento continua o de
+        # sempre: o card é classificado por inteiro e nada é cortado.
+        registros, por_serial, por_usuario = self._plano_com_duas_onts()
+        orquestrador = script.Orquestrador(
+            configuracao=self._configuracao(),
+            sessao=self.sessao,
+            executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        resultados = orquestrador.executar(
+            registros, por_serial, por_usuario)
+        self.assertIn("0/1/4/42", resultados)
+        self.assertIn("0/1/4/43", resultados)
+
+    def test_ont_descartada_nao_ocupa_vaga_do_limit(self):
+        # ONTs descartadas na triagem (sem correspondência, por exemplo)
+        # não ocupam vaga: a contagem só cresce com ONTs que entram no
+        # fluxo, para o limite entregar o número pedido de reprovisionar.
+        registros, _, _ = self._plano_com_duas_onts()
+        # Só a maria consta da planilha: a ONT 42, que vem primeiro, sai
+        # na triagem e a 43 é a primeira a ser avaliada.
+        por_serial = {"HWTC0D3BDDA9": [registros[1]]}
+        por_usuario = {"maria": [registros[1]]}
+        configuracao = self._configuracao()
+        configuracao["maximo_classificacao"] = 1
+        orquestrador = script.Orquestrador(
+            configuracao=configuracao,
+            sessao=self.sessao,
+            executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        resultados = orquestrador.executar(
+            registros, por_serial, por_usuario)
+        # A ONT 42 foi descartada sem consumir a vaga: a 43 ainda entrou.
+        self.assertEqual(resultados["0/1/4/42"]["classe"],
+                         script.IGNORADA_SEM_IDENTIFICADORES)
+        self.assertEqual(resultados["0/1/4/43"]["classe"],
+                         script.PADRAO_1_COMPLETA)
+
 
 class TestesLinhaDeComando(unittest.TestCase):
     def test_sem_prioridade_para_antes_de_conectar(self):
@@ -1930,6 +2015,27 @@ class TestesLinhaDeComando(unittest.TestCase):
                 os.environ["OLT_PRIORIDADE"] = ambiente
         self.assertEqual(codigo, 1)
         self.assertIn("prioridade não configurada", saida.getvalue())
+
+    def test_limit_explicito_tambem_corta_a_classificacao(self):
+        # `--limit` vale para a classificação e para a execução: a
+        # contagem para assim que o número pedido é atingido.
+        import reprovisionar_olt as cli
+
+        argumentos = cli._parse_argumentos(
+            ["--file", "planilha.xlsx", "--limit", "2"])
+        configuracao = cli._configuracao_da_execucao(argumentos)
+        self.assertEqual(configuracao["maximo"], 2)
+        self.assertEqual(configuracao["maximo_classificacao"], 2)
+
+    def test_sem_limit_o_card_e_lido_por_inteiro(self):
+        # Sem `--limit` na linha de comando a classificação não é cortada;
+        # a execução segue no padrão conservador de uma ONT por vez.
+        import reprovisionar_olt as cli
+
+        argumentos = cli._parse_argumentos(["--file", "planilha.xlsx"])
+        configuracao = cli._configuracao_da_execucao(argumentos)
+        self.assertEqual(configuracao["maximo"], 1)
+        self.assertIsNone(configuracao["maximo_classificacao"])
 
 
 if __name__ == "__main__":

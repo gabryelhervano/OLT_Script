@@ -44,10 +44,12 @@ operador.
 
 - Apenas uma ONT é processada por vez; nenhuma alteração é enviada em
   paralelo.
-- Limites configuráveis: máximo de ONTs (`--limit`), intervalo mínimo entre
-  operações (`--delay`), pausas periódicas (`--pausa`) e tempo máximo
+- Limites configuráveis: máximo de ONTs (`--limit`, que também corta a
+  classificação quando é informado na linha de comando), intervalo mínimo
+  entre operações (`--delay`), pausas periódicas (`--pausa`) e tempo máximo
   (`--tempo-maximo`).
-- Três falhas consecutivas suspenden a execução automaticamente.
+- Três falhas consecutivas são anunciadas com um erro pedindo a atenção do
+  operador; a execução segue e o motivo de cada ONT fica no relatório.
 - A interrupção manual (Ctrl+C) é segura: nenhum comando é reenviado após a
   interrupção, e o estado é recapturado no próximo início.
 - A perda de conexão SSH não é interpretada como falha do comando anterior;

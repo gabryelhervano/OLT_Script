@@ -104,6 +104,10 @@ class Orquestrador:
         self.configuracao = configuracao
         self.sessao = sessao
         self.executar_alteracoes = executar_alteracoes
+        # `--limit` explícito: a mesma contagem que limita a execução também
+        # corta a classificação. Sem o argumento, o card é lido por inteiro.
+        self.maximo_classificacao = configuracao.get("maximo_classificacao")
+        self._prontas = 0
         self.controle = None
         self.resultados = {}
         self.processados = set()
@@ -117,6 +121,7 @@ class Orquestrador:
 
     def executar(self, registros, indice_por_serial, indice_por_usuario):
         self.processados = set()
+        self._prontas = 0
         self.controle = ControleExecucao(
             maximo=self.configuracao.get("maximo", 1),
             atraso=self.configuracao.get("atraso", 0),
@@ -146,11 +151,32 @@ class Orquestrador:
         """Classifica o card e confirma antes de executar qualquer comando."""
         executaveis = []
         for dados in onts:
+            if self._limite_da_classificacao_atingido(card):
+                break
             if self._triagem(dados, indice_por_serial, indice_por_usuario):
                 continue
-            self._avaliar_ont(dados, indice_por_serial, indice_por_usuario,
-                              executaveis)
+            resultado = self._avaliar_ont(dados, indice_por_serial,
+                                          indice_por_usuario, executaveis)
+            self.resultados[chave_ont(dados)] = resultado
+            if resultado["classe"] in _REPROVISIONAVEIS:
+                self._prontas += 1
         return self._confirmar_card(card, executaveis)
+
+    def _limite_da_classificacao_atingido(self, card):
+        """Indica que o limite de ONTs já foi achado e a leitura pode parar.
+
+        O corte existe só quando `--limit` foi passado na linha de comando:
+        sem ele o card é classificado inteiro, como sempre. As ONTs que
+        ficaram de fora nem são consultadas, o que economiza centenas de
+        comandos e encurta a sessão com a OLT — que penaliza login.
+        """
+        if self.maximo_classificacao is None:
+            return False
+        if self._prontas < self.maximo_classificacao:
+            return False
+        print("card %s: limite de %d ONTs atingido; as demais não foram "
+              "classificadas" % (card, self.maximo_classificacao))
+        return True
 
     def _triagem(self, dados, indice_por_serial, indice_por_usuario):
         """Triagem sem consulta à OLT; devolve True quando a ONT fica fora.
@@ -193,9 +219,9 @@ class Orquestrador:
 
         A ONT entra em `executaveis` — a lista que leva à confirmação do
         card — assim que é classificada num dos padrões reprovisionáveis,
-        mesmo que a montagem dos passos venha a falhar depois.
+        mesmo que a montagem dos passos venha a falhar depois. O resultado
+        é devolvido para o chamador registrar e contar.
         """
-        identificador = chave_ont(dados)
         try:
             estado_atual = capturar_estado(
                 self.sessao, dados["interface"], dados["porta"],
@@ -203,9 +229,8 @@ class Orquestrador:
                 self._listar_servicos(), self._vlan_da_olt())
         except ErroOperacao as erro:
             # Uma ONT ilegível não interrompe as demais do card.
-            self.resultados[identificador] = _resultado(
+            return _resultado(
                 ESTADO_INCONCLUSIVO, "estado não identificado: %s" % erro)
-            return
         # Os perfis são resolvidos só para as ONTs que entraram no fluxo:
         # a consulta `display ont profile` é desnecessária para as demais.
         resolver_perfis(
@@ -232,7 +257,7 @@ class Orquestrador:
                     resultado["classe"] = ESTADO_INCONCLUSIVO
                     resultado["motivo"] = "falha na execução: %s" % erro
                 executaveis.append(dados)
-        self.resultados[identificador] = resultado
+        return resultado
 
     def _absorver_estado(self, dados, estado_atual):
         """Copia para a ONT os campos que só a leitura descobre."""

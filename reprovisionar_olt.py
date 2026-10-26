@@ -302,8 +302,9 @@ def _parse_argumentos(argv):
                         help="ONT ID para testar uma única CPE")
     parser.add_argument("--serial", dest="serial", default="",
                         help="serial para testar uma única CPE")
-    parser.add_argument("--limit", dest="limite", type=int, default=1,
-                        help="máximo de ONTs a reprovisionar")
+    parser.add_argument("--limit", dest="limite", type=int, default=None,
+                        help="máximo de ONTs a reprovisionar; com o valor, "
+                             "a classificação também para nele")
     parser.add_argument("--delay", dest="atraso", type=float, default=0,
                         help="intervalo mínimo entre operações")
     parser.add_argument("--pausa", dest="pausa", type=int, default=0,
@@ -405,7 +406,16 @@ def _configuracao_da_execucao(argumentos):
     """Configuração do operador, com o que a linha de comando sobrepõe."""
     configuracao = carregar_configuracao(argumentos.configuracao or None)
     configuracao["olt"] = argumentos.olt or configuracao["host"]
-    configuracao["maximo"] = argumentos.limite
+    # Sem `--limit`, o card é classificado inteiro e a execução fica no
+    # padrão conservador de uma ONT por vez. Com o valor, o mesmo número
+    # passa a valer para a classificação: a contagem para assim que ele é
+    # atingido, e as ONTs restantes nem são consultadas.
+    if argumentos.limite is None:
+        configuracao["maximo"] = 1
+        configuracao["maximo_classificacao"] = None
+    else:
+        configuracao["maximo"] = argumentos.limite
+        configuracao["maximo_classificacao"] = argumentos.limite
     configuracao["atraso"] = argumentos.atraso
     configuracao["pausa"] = argumentos.pausa
     if argumentos.reexecutar:
