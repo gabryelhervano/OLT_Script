@@ -76,6 +76,12 @@ operador.
   configurado em `prefixos_serial`) são descartadas na triagem, com a classe
   `DESCARTA_POR_SERIAL`, e o fluxo segue para a próxima ONT. O filtro é
   aplicado antes de qualquer consulta de leitura.
+- ONTs com VoIP em qualquer índice WAN são descartadas com a classe
+  `DESCARTA_POR_VOIP`: reprovisioná-las derrubaria o serviço de voz do
+  cliente. O `Service type` do `display ont wan-info` é varrido no texto
+  cru, porque o VoIP pode estar num índice diferente do primeiro. A leitura
+  do `display ont profile` é pulada — a ONT não entra no fluxo — e ela não
+  ocupa vaga do `--limit`.
 - Antes de consultar o estado de uma ONT, a triagem descarta as que não têm
   correspondência na planilha, comparando o serial e a descrição (que é o
   usuário PPPoE). Isso evita as consultas de leitura das ONTs fora da

@@ -21,7 +21,8 @@ from .configuracao import carregar_configuracao, portas_configuradas
 from .descoberta import capturar_estado, listar_onts, vlan_dominante
 from .erros import ErroOperacao
 from .estados import (BLOQUEADA_AMBIGUIDADE, BLOQUEADA_DIVERGENCIA,
-                      DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
+                      DESCARTA_POR_SERIAL, DESCARTA_POR_VOIP,
+                      ESTADO_INCONCLUSIVO,
                       ESTADO_SUCESSO,
                       IGNORADA_SEM_IDENTIFICADORES, JA_CONFIGURADA,
                       JA_CONCLUIDA, PADRAO_1_COMPLETA, PADRAO_2_PPPOE,
@@ -33,13 +34,14 @@ from .relatorio import carregar_registro, chave_ont, gravar_relatorio, \
 from .sessao import SessaoSimulada, SessaoSSH, Simulador, Transporte, \
     conectar_ssh
 
-__version__ = "1.12.0"
+__version__ = "1.13.0"
 
 __all__ = [
     "__version__",
     "BLOQUEADA_AMBIGUIDADE",
     "BLOQUEADA_DIVERGENCIA",
     "DESCARTA_POR_SERIAL",
+    "DESCARTA_POR_VOIP",
     "ControleExecucao",
     "ESTADO_INCONCLUSIVO",
     "ESTADO_SUCESSO",

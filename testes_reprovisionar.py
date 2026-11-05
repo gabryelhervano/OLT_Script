@@ -1989,6 +1989,65 @@ class TestesFluxo(unittest.TestCase):
         self.assertEqual(resultados["0/1/4/43"]["classe"],
                          script.PADRAO_1_COMPLETA)
 
+    def test_ont_com_voip_nao_e_reprovisionada(self):
+        # Reprovisionar uma ONT com VoIP derrubaria o serviço de voz do
+        # cliente: a tentativa é eliminada antes de qualquer comando.
+        self.sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Manage VLAN : 2551\n"
+            "  Service type : Voip, Internet\n"
+            "  IPv4 Connection status : Connected\n")
+        registros, _, _ = self._plano_com_duas_onts()
+        orquestrador = script.Orquestrador(
+            configuracao=self._configuracao(),
+            sessao=self.sessao,
+            executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        resultados = orquestrador.executar(
+            registros, {"HWTC0D3BDDA7": [registros[0]]},
+            {"joao": [registros[0]]})
+        info = resultados["0/1/4/42"]
+        self.assertEqual(info["classe"], script.DESCARTA_POR_VOIP)
+        self.assertEqual(info["motivo"], "VoIP configurado: Voip, Internet")
+        # Nem a consulta de perfis é feita: ela só serve a quem entra no
+        # fluxo, e esta ONT ficou de fora.
+        self.assertNotIn("display ont profile 0 1 4 42",
+                         self.sessao.comandos)
+        # E nada além das leituras: nenhum comando de alteração.
+        # (`interface gpon` e `quit` são a navegação em volta do
+        # `display ont ipconfig`, que a MA5800 só aceita naquela visão.)
+        enviados = [comando for comando in self.sessao.comandos
+                    if comando.startswith(("undo", "ont ", "service-port"))]
+        self.assertEqual(enviados, [])
+
+    def test_voip_em_indice_posterior_tambem_bloqueia(self):
+        # O `display ont wan-info` traz um bloco por índice e o VoIP pode
+        # estar no segundo, com Internet no primeiro: a varredura é feita
+        # no texto cru justamente para não perder esse caso.
+        self.sessao.definir_resposta(
+            "display ont wan-info 0/1 4 42",
+            "  Index                      : 1\n"
+            "  Name                       : 1_INTERNET_R_VID_1001\n"
+            "  Service type               : Internet\n"
+            "  ---------------------------------------------------------------------\n"
+            "  Index                      : 2\n"
+            "  Name                       : 2_VOIP_R_VID_1002\n"
+            "  Service type               : Voip\n")
+        registros, _, _ = self._plano_com_duas_onts()
+        orquestrador = script.Orquestrador(
+            configuracao=self._configuracao(),
+            sessao=self.sessao,
+            executar_alteracoes=False,
+            caminho_registro=REGISTRO_TESTE,
+        )
+        resultados = orquestrador.executar(
+            registros, {"HWTC0D3BDDA7": [registros[0]]},
+            {"joao": [registros[0]]})
+        info = resultados["0/1/4/42"]
+        self.assertEqual(info["classe"], script.DESCARTA_POR_VOIP)
+        self.assertEqual(info["motivo"], "VoIP configurado: Voip")
+
 
 class TestesLinhaDeComando(unittest.TestCase):
     def test_sem_prioridade_para_antes_de_conectar(self):

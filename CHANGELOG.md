@@ -4,6 +4,23 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.13.0 - 2026-11-05
+
+ONTs com VoIP configurado deixam de entrar no fluxo de reprovisionamento.
+
+- O `Service type` do `display ont wan-info` é varrido no texto cru: o VoIP
+  pode estar num índice WAN diferente do primeiro, e os campos já
+  interpretados guardam só a primeira ocorrência.
+- Quando algum índice tem VoIP, a ONT sai com a classe `DESCARTA_POR_VOIP`
+  e o motivo traz o `Service type` encontrado (por exemplo, "VoIP
+  configurado: Voip, Internet"). Nenhum comando de alteração é montado:
+  reprovisioná-la derrubaria o serviço de voz do cliente.
+- A descarta acontece antes da consulta `display ont profile` e da
+  classificação: quem não entra no fluxo não paga essa leitura e não ocupa
+  vaga do `--limit`.
+- Dois testes novos (56 no total): VoIP no primeiro índice e VoIP num
+  índice posterior ao primeiro.
+
 ## v1.12.0 - 2026-10-26
 
 `--limit` passa a cortar também a classificação, quando é informado na linha

@@ -16,7 +16,8 @@ from .descoberta import (_consultar_configuracao_atual, _servico_da_ont,
                       capturar_estado, listar_onts, listar_servicos,
                       resolver_perfis, vlan_dominante)
 from .erros import ErroOperacao
-from .estados import (DESCARTA_POR_SERIAL, ESTADO_INCONCLUSIVO,
+from .estados import (DESCARTA_POR_SERIAL, DESCARTA_POR_VOIP,
+                      ESTADO_INCONCLUSIVO,
                       ESTADO_SUCESSO, IGNORADA_SEM_IDENTIFICADORES,
                       JA_CONFIGURADA, JA_CONCLUIDA, PADRAO_1_COMPLETA, PADRAO_2_PPPOE,
                       PADRAO_2_SERIAL)
@@ -231,6 +232,14 @@ class Orquestrador:
             # Uma ONT ilegível não interrompe as demais do card.
             return _resultado(
                 ESTADO_INCONCLUSIVO, "estado não identificado: %s" % erro)
+        if estado_atual.get("servico_voip"):
+            # Reprovisionar uma ONT com VoIP derrubaria o serviço de voz do
+            # cliente. A tentativa é eliminada aqui, antes da consulta de
+            # perfis e da classificação: nada é enviado além das leituras
+            # que o estado da ONT já exigia.
+            return _resultado(
+                DESCARTA_POR_VOIP,
+                "VoIP configurado: %s" % estado_atual["servico_voip"])
         # Os perfis são resolvidos só para as ONTs que entraram no fluxo:
         # a consulta `display ont profile` é desnecessária para as demais.
         resolver_perfis(

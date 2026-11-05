@@ -416,6 +416,23 @@ def _mac_util(*fontes):
     return ""
 
 
+def _servico_com_voip(wan_info):
+    """`Service type` de um índice WAN que inclui VoIP; "" quando não há.
+
+    O `display ont wan-info` traz um bloco por índice, cada um com seu
+    próprio `Service type`, e o VoIP pode estar num índice diferente do
+    primeiro — por isso a varredura é feita no texto cru e não nos campos
+    já interpretados, que guardam só a primeira ocorrência.
+    """
+    for linha in (wan_info or "").splitlines():
+        if ":" not in linha:
+            continue
+        chave, valor = linha.split(":", 1)
+        if chave.strip() == "Service type" and "voip" in valor.lower():
+            return valor.strip()
+    return ""
+
+
 def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
                     servicos=None, vlan_olt=None):
     """Registra o estado atual da ONT, sem executar nenhum comando de alteração.
@@ -426,7 +443,7 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
     usada na OLT — ela substitui a VLAN da própria ONT em todos os comandos,
     para que toda CPE saia com a mesma VLAN.
     """
-    campos_wan, campos_ip, servico = _ler_estado_da_ont(
+    wan_info, campos_wan, campos_ip, servico = _ler_estado_da_ont(
         sessao, interface, porta, ont_id, servicos)
     servico = servico or {}
     atual = _configuracao_da_ont(config_atual, porta, ont_id)
@@ -454,6 +471,9 @@ def capturar_estado(sessao, interface, porta, ont_id, config_atual=None,
         "service_vlan": vlan_olt or servico.get("vlan") or vlane,
         "service_port": servico.get("id"),
         "tipo_wan": _campo(campos_wan, "Service type"),
+        # Vazio quando nenhum índice WAN tem VoIP: o valor é o `Service
+        # type` do bloco que tem, para o motivo sair legível no relatório.
+        "servico_voip": _servico_com_voip(wan_info),
         "status_conexao": _campo(campos_wan, "IPv4 Connection status"),
         "mac": _mac_util(campos_ip, campos_wan),
     }
@@ -471,7 +491,7 @@ def _ler_estado_da_ont(sessao, interface, porta, ont_id, servicos):
     ipconfig = _consultar_ipconfig(sessao, interface, porta, ont_id)
     if servicos is None:
         servicos = listar_servicos(sessao)
-    return (_campos(wan_info), _campos(ipconfig),
+    return (wan_info, _campos(wan_info), _campos(ipconfig),
             _servico_da_ont(servicos, interface, porta, ont_id))
 
 

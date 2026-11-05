@@ -21,6 +21,9 @@ BLOQUEADA_AMBIGUIDADE = "BLOQUEADA_AMBIGUIDADE"
 # A CPE não é de um equipamento suportado pela OLT.
 DESCARTA_POR_SERIAL = "DESCARTA_POR_SERIAL"
 
+# A ONT tem VoIP configurado: reprovisioná-la derrubaria o serviço de voz.
+DESCARTA_POR_VOIP = "DESCARTA_POR_VOIP"
+
 # A ONT já está com o line-profile desejado: não há o que reprovisionar.
 JA_CONFIGURADA = "JA_CONFIGURADA"
 

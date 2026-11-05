@@ -5,6 +5,10 @@ Huawei (modelos MA5800, entre outros), utilizando a CLI do equipamento por
 SSH. A sequência de comandos reproduzida é a mesma validada na MA5800 com
 versão V100R021.
 
+ONTs com VoIP configurado não entram no fluxo: elas são descartadas com a
+classe `DESCARTA_POR_VOIP` e nenhuma alteração é montada, porque
+reprovisioná-las derrubaria o serviço de voz do cliente.
+
 ## Estrutura do projeto
 
 | Arquivo | Descrição |
