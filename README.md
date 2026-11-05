@@ -39,6 +39,34 @@ pip3 install -r requirements.txt
 
 O script usa apenas `openpyxl` e `paramiko` além da biblioteca padrão.
 
+## Planilha de entrada
+
+Quatro colunas: **usuário PPPoE, senha, MAC e serial**. O cabeçalho é
+opcional. Para associar a ONT a um registro valem o **usuário** e o
+**serial**; o MAC é opcional e o script não usa o valor para decidir nada.
+
+A **senha** é enviada à OLT exatamente como está na célula, então só o
+padrão do provedor é aceito:
+
+- `12345678`, ou
+- um CPF de **11 dígitos**, apenas números (sem pontuação).
+
+Qualquer outra senha descarta a linha: ela aparece como `INVALIDO` com o
+motivo `senha fora do padrão` no resumo da leitura, e o script segue com
+quem sobrou. Nada é deduzido — dígitos não são completados e pontuação
+não é removida, porque qualquer ajuste mudaria a credencial provisionada
+na CPE.
+
+O resumo impresso na leitura tem quatro contadores:
+
+```
+planilha: válidos: N | inválidos: N | duplicados: N | ausentes: N
+```
+
+`inválidos` reúne senha fora do padrão, MAC ou serial malformados;
+`ausentes` reúne as linhas com marcador de informação ausente
+(`FF:FF:FF:FF:FF:FF`).
+
 ## Execução
 
 > **Windows:** os exemplos usam `python3`/`pip3` (Linux/macOS). No Windows,

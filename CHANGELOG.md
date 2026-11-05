@@ -4,6 +4,25 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.14.0 - 2026-11-05
+
+A senha da planilha passa a seguir o padrão do provedor.
+
+- A senha é aceita apenas se for `12345678` ou um CPF de 11 dígitos (só
+  números). Qualquer outra descarta a linha com o estado `INVALIDO` e o
+  motivo `senha fora do padrão`, antes de qualquer conexão com a OLT.
+- A comparação é literal: dígitos não são completados e pontuação não é
+  removida. `062.702.026-71` não vira `06270202671`, porque a senha que
+  sai do script é a mesma que vai para a CPE.
+- Em `pppoes-cyber.xlsx` isso descarta 3.728 das 11.167 linhas, sobrando
+  5.218 válidas. Das descartadas, 2.550 têm senha de 10 dígitos — não são
+  CPF corrompido: 2.548 têm usuário-texto e senha diferente dele.
+- A regra entra logo após a checagem de senha ausente, no mesmo grupo de
+  validações do campo. Os fixtures dos testes passam a usar `12345678`,
+  para que cada teste continue exercitando o que se propõe.
+- Três testes novos (59 no total): senha válida por CPF, descarte das
+  três formas inválidas e recusa de CPF com pontuação.
+
 ## v1.13.0 - 2026-11-05
 
 ONTs com VoIP configurado deixam de entrar no fluxo de reprovisionamento.

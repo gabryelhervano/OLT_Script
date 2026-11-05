@@ -49,8 +49,8 @@ class TestesPlanilha(unittest.TestCase):
 
     def test_leitura_sem_cabecalho(self):
         self._escrever([
-            "joao,1234,00:11:22:33:44:55,HWTC00000001",
-            "maria,12345,0A:0B:0C:0D:0E:0F,HWTC00000002",
+            "joao,12345678,00:11:22:33:44:55,HWTC00000001",
+            "maria,12345678,0A:0B:0C:0D:0E:0F,HWTC00000002",
         ])
         registros, problemas = script.ler_planilha(self.caminho)
         self.assertEqual(len(registros), 2)
@@ -58,16 +58,16 @@ class TestesPlanilha(unittest.TestCase):
 
     def test_preserva_zeros_e_caracteres_especiais(self):
         self._escrever([
-            'joao,"0001230",00:11:22:33:44:55,HWTC00000001',
+            'joao,"01234567890",00:11:22:33:44:55,HWTC00000001',
         ])
         registros, _ = script.ler_planilha(self.caminho)
-        self.assertEqual(registros[0]["senha"], "0001230")
+        self.assertEqual(registros[0]["senha"], "01234567890")
 
     def test_mac_aceito_com_ou_sem_traco(self):
         caminho = self.caminho
         escrever(caminho, [
-            "cliente,senha123,AC8D-34D9-BD67,HWTC0D3BDDA7",
-            "outro,senha123,28:68:D2:B2:1C:EF,48575443FA70D1B3",
+            "cliente,12345678,AC8D-34D9-BD67,HWTC0D3BDDA7",
+            "outro,12345678,28:68:D2:B2:1C:EF,48575443FA70D1B3",
         ])
         registros, problemas = script.ler_planilha(caminho)
         self.assertEqual(len(registros), 2)
@@ -76,8 +76,8 @@ class TestesPlanilha(unittest.TestCase):
 
     def test_identifica_mac_e_serial_invalidos(self):
         self._escrever([
-            "joao,1234,00:11:22:33:44,HWTC00000001",
-            "maria,1234,00:11:22:33:44:55,1",
+            "joao,12345678,00:11:22:33:44,HWTC00000001",
+            "maria,12345678,00:11:22:33:44:55,1",
         ])
         registros, problemas = script.ler_planilha(self.caminho)
         self.assertEqual(registros, [])
@@ -85,8 +85,8 @@ class TestesPlanilha(unittest.TestCase):
 
     def test_ausencia_de_usuario_e_serial_e_mac_e_aceita(self):
         self._escrever([
-            "joao,1234,,HWTC00000001",
-            "maria,1234,00:11:22:33:44:55,",
+            "joao,12345678,,HWTC00000001",
+            "maria,12345678,00:11:22:33:44:55,",
         ])
         registros, _ = script.ler_planilha(self.caminho)
         self.assertEqual(len(registros), 2)
@@ -99,9 +99,46 @@ class TestesPlanilha(unittest.TestCase):
         self.assertEqual(registros, [])
         self.assertEqual(problemas[0]["estado"], "INVALIDO")
 
+    def test_senha_padrao_e_cpf_sao_aceitos(self):
+        self._escrever([
+            "joao,12345678,00:11:22:33:44:55,HWTC00000001",
+            "maria,14536148698,00:11:22:33:44:66,HWTC00000002",
+        ])
+        registros, problemas = script.ler_planilha(self.caminho)
+        self.assertEqual([r["senha"] for r in registros],
+                         ["12345678", "14536148698"])
+        self.assertEqual(problemas, [])
+
+    def test_senha_fora_do_padrao_descarta_a_linha(self):
+        # Só `12345678` e CPF de 11 dígitos servem: o resto seria
+        # provisionado errado na CPE. As três linhas descartadas estão
+        # corretas em todas as demais colunas, para o motivo da rejeição
+        # ser a senha mesmo.
+        self._escrever([
+            "joao,12345678,00:11:22:33:44:55,HWTC00000001",
+            "maria,6651673696,00:11:22:33:44:66,HWTC00000002",
+            "carlos,123,00:11:22:33:44:77,HWTC00000003",
+            "ana,clientef17,00:11:22:33:44:88,HWTC00000004",
+        ])
+        registros, problemas = script.ler_planilha(self.caminho)
+        self.assertEqual([r["usuario"] for r in registros], ["joao"])
+        self.assertEqual([p["motivo"] for p in problemas],
+                         ["senha fora do padrão"] * 3)
+
+    def test_senha_cpf_com_pontuacao_nao_e_aceita(self):
+        # A pontuação não é removida: a senha enviada à OLT é exatamente
+        # a da planilha, e `062.702.026-71` não é a mesma coisa que
+        # `06270202671`.
+        self._escrever([
+            "joao,062.702.026-71,00:11:22:33:44:55,HWTC00000001",
+        ])
+        registros, problemas = script.ler_planilha(self.caminho)
+        self.assertEqual(registros, [])
+        self.assertEqual(problemas[0]["motivo"], "senha fora do padrão")
+
     def test_marcadores_de_ausencia_sao_ignorados(self):
         self._escrever([
-            "joao,1234,FF:FF:FF:FF:FF:FF,FF:FF:FF:FF:FF:FF",
+            "joao,12345678,FF:FF:FF:FF:FF:FF,FF:FF:FF:FF:FF:FF",
         ])
         registros, problemas = script.ler_planilha(self.caminho)
         self.assertEqual(registros, [])
@@ -109,8 +146,8 @@ class TestesPlanilha(unittest.TestCase):
 
     def test_identificadores_duplicados_bloquem(self):
         self._escrever([
-            "joao,1234,00:11:22:33:44:55,HWTC00000001",
-            "joao,1234,00:11:22:33:44:66,HWTC00000001",
+            "joao,12345678,00:11:22:33:44:55,HWTC00000001",
+            "joao,12345678,00:11:22:33:44:66,HWTC00000001",
         ])
         registros, problemas = script.ler_planilha(self.caminho)
         self.assertEqual([r["estado"] for r in registros], ["DUPLICADO", "DUPLICADO"])

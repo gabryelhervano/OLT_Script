@@ -32,6 +32,12 @@ _PADRAO_SERIAL = re.compile(r"^[0-9A-Za-z]{4,20}$")
 _MASCARAS_MAC = frozenset(("ff:ff:ff:ff:ff:ff", "ffffffffffff"))
 _MASCARAS_SERIAL = frozenset(("ffffffffffffffff", "ffff:ffff:ffff:ffff"))
 
+# A senha vai para a OLT exatamente como está na planilha, então só o
+# padrão do provedor serve: a senha fixa `12345678` ou o CPF do cliente,
+# que tem 11 dígitos. Qualquer outra seria provisionada errada na CPE.
+_SENHA_PADRAO = "12345678"
+_PADRAO_CPF = re.compile(r"^\d{11}$")
+
 
 def ler_planilha(caminho):
     """Lê a planilha sem presumir a existência de cabeçalho.
@@ -159,6 +165,8 @@ def _validar(dicionario):
     serial = dicionario.get(_CHAVE_SERIAL, "")
     if not senha:
         return "INVALIDO", "senha ausente"
+    if not _senha_util(senha):
+        return "INVALIDO", "senha fora do padrão"
     if _eh_marca_mac(mac):
         return "IGNORADO", "ausência de informação no MAC"
     if _eh_marca_serial(serial):
@@ -172,6 +180,15 @@ def _validar(dicionario):
     if not usuario and not serial:
         return "INVALIDO", "sem identificador para associação"
     return "VALIDO", ""
+
+
+def _senha_util(senha):
+    """Indica se a senha segue o padrão do provedor: `12345678` ou CPF.
+
+    A comparação é literal: nenhum caractere é removido nem completado,
+    porque a senha digitada aqui é a mesma que vai para a OLT.
+    """
+    return senha == _SENHA_PADRAO or _PADRAO_CPF.match(senha) is not None
 
 
 def _eh_usuario(valor):

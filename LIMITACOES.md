@@ -32,6 +32,10 @@ operador.
   `gemport` é enviado: a OLT atribui o service-port criado.
 - Credenciais vindas da planilha nunca são deduzidas por tentativa; ausência de
   senha, MAC ou serial inválido bloqueia o registro antes de qualquer conexão.
+- A senha só é aceita se for `12345678` ou um CPF de 11 dígitos, porque é ela
+  que vai para a CPE. Qualquer outra descarta a linha, com o motivo
+  `senha fora do padrão`. Dígitos não são completados e pontuação não é
+  removida: qualquer ajuste mudaria a credencial provisionada.
 - Ausência de um identificador não é tratada como divergência; divergência
   (serial e usuário apontando para registros diferentes) bloqueia a operação.
 - Uma execução real exige confirmação por card: o operador confirma o card inteiro
