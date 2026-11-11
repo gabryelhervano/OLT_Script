@@ -85,7 +85,7 @@ class TestesPlanilha(unittest.TestCase):
         self.assertEqual(registros, [])
         self.assertEqual([p["estado"] for p in problemas], ["INVALIDO", "INVALIDO"])
 
-    def test_ausencia_de_usuario_e_serial_e_mac_e_aceita(self):
+    def test_mac_e_serial_podem_faltar_quando_ha_usuario(self):
         self._escrever([
             "joao,12345678,,HWTC00000001",
             "maria,12345678,00:11:22:33:44:55,",
@@ -188,14 +188,14 @@ class TestesClassificacao(unittest.TestCase):
         self.registros = [
             {
                 "usuario": "joao",
-                "senha": "1234",
+                "senha": "12345678",
                 "mac": "00:11:22:33:44:55",
                 "serial": "HWTC0D3BDDA7",
                 "estado": "VALIDO",
             },
             {
                 "usuario": "maria",
-                "senha": "1234",
+                "senha": "12345678",
                 "mac": "00:11:22:33:44:66",
                 "serial": "HWTC0002",
                 "estado": "VALIDO",
@@ -435,12 +435,12 @@ class TestesSessao(unittest.TestCase):
             "display ont wan-info 0/1 4 42",
             "  IPv4 Connection status : Connected")
         sessao.definir_resposta(
-            'ont ipconfig 4 42 pppoe vlan 2551 password "1234"',
+            'ont ipconfig 4 42 pppoe vlan 2551 password "12345678"',
             '  Command:\n'
-            '          ont ipconfig 4 42 pppoe vlan 2551 password "1234"\n'
+            '          ont ipconfig 4 42 pppoe vlan 2551 password "12345678"\n'
             '   ----------------------------------------------------------------')
         sessao.executar("display ont wan-info 0/1 4 42")
-        sessao.alterar('ont ipconfig 4 42 pppoe vlan 2551 password "1234"')
+        sessao.alterar('ont ipconfig 4 42 pppoe vlan 2551 password "12345678"')
         self.assertEqual(len(trocas), 2)
         comando, saida, alteracao = trocas[0]
         self.assertEqual(comando, "display ont wan-info 0/1 4 42")
@@ -448,8 +448,8 @@ class TestesSessao(unittest.TestCase):
         self.assertFalse(alteracao)
         comando, saida, alteracao = trocas[1]
         self.assertTrue(alteracao)
-        self.assertIn('password "1234"', comando)
-        self.assertIn('password "1234"', saida)
+        self.assertIn('password "12345678"', comando)
+        self.assertIn('password "12345678"', saida)
         self.assertNotIn("********", comando)
         self.assertNotIn("********", saida)
 
@@ -471,12 +471,19 @@ class TestesSessao(unittest.TestCase):
         self.assertIn("(sem resposta)", texto)
 
     def test_argumento_debug(self):
+        # O flag só tem efeito se chegar ao observador: sem --debug
+        # `_anunciar_modo` devolve None e nenhuma troca com a OLT aparece.
+        import io
+        import contextlib
+
         import reprovisionar_olt as cli
 
-        argumentos = cli._parse_argumentos(["--file", "x.xlsx", "--debug"])
-        self.assertTrue(argumentos.debug)
-        self.assertFalse(
-            cli._parse_argumentos(["--file", "x.xlsx"]).debug)
+        com_debug = cli._parse_argumentos(["--file", "x.xlsx", "--debug"])
+        sem_debug = cli._parse_argumentos(["--file", "x.xlsx"])
+        saida = io.StringIO()
+        with contextlib.redirect_stdout(saida):
+            self.assertIsNotNone(cli._anunciar_modo(com_debug))
+            self.assertIsNone(cli._anunciar_modo(sem_debug))
 
     def test_mock_aceita_comandos_de_alteracao(self):
         # `--mock --execute` usa o Simulador: sem `alterar` a execução
@@ -597,7 +604,7 @@ class TestesFluxo(unittest.TestCase):
             "vlan": 2551,
             "prioridade": 5,
             "usuario": "joao",
-            "senha": "000123",
+            "senha": "12345678",
             "gemport": 37,
             "user_vlan": 2551,
             "service_vlan": 2551,
@@ -609,7 +616,7 @@ class TestesFluxo(unittest.TestCase):
             {
                 "serial": "HWTC0D3BDDA7",
                 "usuario": "joao",
-                "senha": "1234",
+                "senha": "12345678",
             },
         ):
             indice.setdefault(registro["serial"], []).append(registro)
@@ -620,7 +627,7 @@ class TestesFluxo(unittest.TestCase):
         for registro in (
             {
                 "usuario": "joao",
-                "senha": "1234",
+                "senha": "12345678",
             },
         ):
             indice.setdefault(registro["usuario"], []).append(registro)
@@ -639,16 +646,6 @@ class TestesFluxo(unittest.TestCase):
         enviados = [comando for comando in self.sessao.comandos
                    if comando.startswith(("undo", "ont ", "service-port "))]
         self.assertEqual(enviados, [])
-
-    def test_comando_de_criacao_nao_leva_identificador(self):
-        comando = script.comando_criar_service_port(self._configuracao())
-        partes = comando.split(" ")
-        self.assertEqual(partes[0], "service-port")
-        self.assertEqual(partes[1], "vlan")
-
-    def test_senha_do_comando_e_a_da_planilha(self):
-        comando = script.comando_configurar_pppoe(self._configuracao())
-        self.assertIn('password "000123"', comando)
 
     def test_descobrimento_usa_estado_atual(self):
         # Somente o line-profile vem da configuração; todos os demais valores
@@ -677,7 +674,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -722,7 +719,7 @@ class TestesFluxo(unittest.TestCase):
             "interface": "0/1",
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "vlane": 2551,
             "prioridade": "--",
             "srvprofile": 100,
@@ -807,7 +804,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -902,7 +899,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -967,7 +964,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -984,7 +981,7 @@ class TestesFluxo(unittest.TestCase):
             "ont add 4 42 sn-auth \"HWTC0D3BDDA7\" omci ont-lineprofile-id 11"
             " ont-srvprofile-id 100 desc \"joao\"",
             "ont ipconfig 4 42 pppoe vlan 2551 priority 5 user-account"
-            " username \"joao\" password \"1234\"",
+            " username \"joao\" password \"12345678\"",
             "ont port native-vlan 4 42 eth 1 vlan 2551 priority 0",
             "ont tr069-server-config 4 42 profile-id 1",
             "ont internet-config 4 42 ip-index 0",
@@ -1058,7 +1055,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1131,7 +1128,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1194,7 +1191,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1263,7 +1260,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1332,7 +1329,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1401,7 +1398,7 @@ class TestesFluxo(unittest.TestCase):
                 "ont_id": ont_id,
                 "serial": serial,
                 "usuario": usuario,
-                "senha": "1234",
+                "senha": "12345678",
                 "mac": "00:11:22:33:44:55",
                 "estado": "VALIDO",
             })
@@ -1478,7 +1475,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1548,7 +1545,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1637,7 +1634,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1708,7 +1705,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1728,13 +1725,17 @@ class TestesFluxo(unittest.TestCase):
                          if comando.startswith("ont delete")])
 
     def test_argumento_reexecutar(self):
+        # A flag só vale se chegar ao orquestrador: é ela que permite
+        # reprovisionar de novo a ONT que a campanha marcou como concluída.
         import reprovisionar_olt as cli
 
-        argumentos = cli._parse_argumentos(
+        com_flag = cli._parse_argumentos(
             ["--file", "x.xlsx", "--reexecutar"])
-        self.assertTrue(argumentos.reexecutar)
-        self.assertFalse(
-            cli._parse_argumentos(["--file", "x.xlsx"]).reexecutar)
+        sem_flag = cli._parse_argumentos(["--file", "x.xlsx"])
+        self.assertEqual(
+            cli._configuracao_da_execucao(com_flag)["reexecutar"], "true")
+        self.assertNotEqual(
+            cli._configuracao_da_execucao(sem_flag)["reexecutar"], "true")
 
     def test_service_port_reaproveita_a_vlan_ja_em_uso(self):
         # A ONT está na manage VLAN 2551, mas o service-port que a atende
@@ -1790,7 +1791,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1877,7 +1878,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1950,7 +1951,7 @@ class TestesFluxo(unittest.TestCase):
             "ont_id": 42,
             "serial": "HWTC0D3BDDA7",
             "usuario": "joao",
-            "senha": "1234",
+            "senha": "12345678",
             "mac": "00:11:22:33:44:55",
             "estado": "VALIDO",
         }
@@ -1974,10 +1975,10 @@ class TestesFluxo(unittest.TestCase):
         """Planilha com as duas ONTs do card 0/1/4, ambas reprovisionáveis."""
         registros = [
             {"interface": "0/1", "porta": 4, "ont_id": 42,
-             "serial": "HWTC0D3BDDA7", "usuario": "joao", "senha": "1234",
+             "serial": "HWTC0D3BDDA7", "usuario": "joao", "senha": "12345678",
              "estado": "VALIDO"},
             {"interface": "0/1", "porta": 4, "ont_id": 43,
-             "serial": "HWTC0D3BDDA9", "usuario": "maria", "senha": "1234",
+             "serial": "HWTC0D3BDDA9", "usuario": "maria", "senha": "12345678",
              "estado": "VALIDO"},
         ]
         por_serial = {}

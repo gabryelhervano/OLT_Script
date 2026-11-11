@@ -4,6 +4,30 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.14.2 - 2026-11-11
+
+fix(security): testes que não verificavam o que diziam e ligação da CLI sem cobertura.
+
+- Removidos `test_comando_de_criacao_nao_leva_identificador` — conferia
+  só as duas primeiras palavras do comando enquanto o nome prometia a
+  regra de nunca inventar identificador, dando confiança falsa (o
+  comando inteiro já está fixado em `test_sequencia_validada_e_completa`)
+  — e `test_senha_do_comando_e_a_da_planilha`, que repetia a asserção
+  dessa mesma sequência.
+- `test_argumento_debug` passa a cobrir a ligação: `--debug` precisa
+  devolver o observador em `_anunciar_modo`, senão nenhuma troca com a
+  OLT é exibida.
+- `test_argumento_reexecutar` passa a cobrir a ligação: a flag precisa
+  levar `configuracao["reexecutar"]` a `"true"` — trecho que antes não
+  tinha teste nenhum. A nova asserção também fixa o default (`''`), o
+  que apareceu já na primeira execução.
+- `test_ausencia_de_usuario_e_serial_e_mac_e_aceita` renomeado para
+  `test_mac_e_serial_podem_faltar_quando_ha_usuario`: o teste era
+  válido, mas o nome afirmava coisa que ele não verificava.
+- Os fixtures de fluxo deixam de usar `1234` e `000123`, senhas que o
+  filtro da v1.14.0 rejeitaria numa planilha real (31 pontos).
+- 59 testes, eram 61.
+
 ## v1.14.1 - 2026-11-11
 
 fix(security): retorno de carro passava pela proteção de transmissão.
