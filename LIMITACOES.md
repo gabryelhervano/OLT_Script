@@ -100,8 +100,13 @@ operador.
   comandos. Na saída do terminal (resumo, `--roteiro` e `--debug`) e em
   mensagens de diagnóstico elas aparecem em texto puro, exatamente como são
   enviadas: cuidado ao copiar a saída para terceiros.
-- Valores contendo `"` ou `\` são bloqueados na montagem do comando, pois a CLI
-  Huawei não garante transmissão segura deles.
+- A senha, o usuário e o serial vão para a OLT entre aspas. Se algum deles
+  trouxer `"`, `\`, quebra de linha (`\n`) ou retorno de carro (`\r`), o
+  comando é recusado antes do envio (`CredenciaisNaoTransmitidas`), porque a
+  CLI Huawei não garante transmissão segura deles. A recusa é fechada: nada
+  é removido do valor, já que apagar um caractere mudaria a credencial.
+  Ponto-e-virgula e aspas simples continuam permitidos — são literais dentro
+  de aspas duplas na CLI.
 - A conexão SSH valida a chave do servidor (`RejectPolicy`); chaves novas não
   são aceitas automaticamente.
 

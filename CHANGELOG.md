@@ -4,6 +4,23 @@ Cada versão marcada no git corresponde a um ponto de retorno conhecido. Para
 voltar a uma delas: `python restaurar_versao.py <versão>` (no Linux/macOS,
 `python3`).
 
+## v1.14.1 - 2026-11-11
+
+fix(security): retorno de carro passava pela proteção de transmissão.
+
+- `_aspas` já recusava `"`, `\` e `\n`, mas aceitava `\r`. Dependendo do
+  terminador configurado na sessão (`lf`, `crlf` ou `cr`), um retorno de
+  carro embutido no valor poderia ser lido como fim de comando na CLI e
+  reescrever o restante da linha.
+- A lista passa a ser a constante nomeada `_CARACTERES_PROIBIDOS`, com o
+  motivo de cada caractere documentado num lugar só.
+- A recusa continua fechada: nada é removido do valor, porque apagar um
+  caractere mudaria a senha que chega à CPE.
+- Dois testes novos (61 no total), escritos pelo caminho público
+  `comando_configurar_pppoe`: um fixa a recusa dos quatro caracteres, o
+  outro garante que ponto-e-virgula e aspas simples sigam aceitos — são
+  literais dentro de aspas duplas na CLI Huawei.
+
 ## v1.14.0 - 2026-11-05
 
 A senha da planilha passa a seguir o padrão do provedor.

@@ -15,8 +15,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import olt as script
 from olt import interacao
+from olt.comandos import comando_configurar_pppoe
 from olt.descoberta import (_consultar_configuracao_atual,
                           _consultar_perfil_ont)
+from olt.erros import CredenciaisNaoTransmitidas
 
 
 REGISTRO_TESTE = os.path.join(tempfile.gettempdir(),
@@ -152,6 +154,33 @@ class TestesPlanilha(unittest.TestCase):
         registros, problemas = script.ler_planilha(self.caminho)
         self.assertEqual([r["estado"] for r in registros], ["DUPLICADO", "DUPLICADO"])
         self.assertEqual(problemas[0]["estado"], "DUPLICADO")
+
+
+class TestesMontagemDeComandos(unittest.TestCase):
+    """A senha, o usuário e o serial só chegam à OLT se puderem ir seguros."""
+
+    def _montar(self, senha):
+        return comando_configurar_pppoe({
+            "porta": 5, "ont_id": 43, "vlan": 2551, "prioridade": 5,
+            "usuario": "joao", "senha": senha,
+        })
+
+    def test_caracteres_que_quebram_a_linha_sao_recusados(self):
+        # Aspas, barra invertida e fim de linha cortariam ou reescreveriam
+        # o comando dentro da CLI; o retorno de carro conta como fim de
+        # linha dependendo do terminador da sessão. A recusa é fechada:
+        # nada é removido do valor, porque apagar um caractere mudaria a
+        # senha que chega à CPE.
+        for proibido in ('"', '\\', '\n', '\r'):
+            with self.assertRaises(CredenciaisNaoTransmitidas):
+                self._montar('1234%s5678' % proibido)
+
+    def test_caracteres_que_a_cli_le_como_literais_sao_aceitos(self):
+        # Ponto-e-virgula e aspas simples são literais dentro de aspas
+        # duplas na CLI Huawei: filtrar também estes travaria senhas
+        # válidas que o provedor usa de verdade.
+        self.assertIn('password "abc;def\'ghi"',
+                      self._montar("abc;def'ghi"))
 
 
 class TestesClassificacao(unittest.TestCase):

@@ -10,8 +10,14 @@ from .erros import CredenciaisNaoTransmitidas, ErroOperacao
 from .util import texto
 
 
+# Caracteres que podem encerrar a linha do comando ou reescrever o valor
+# dentro das aspas na CLI. A recusa é fechada: nada é removido do valor,
+# porque apagar um caractere mudaria a credencial que chega à CPE.
+_CARACTERES_PROIBIDOS = ('"', '\\', '\n', '\r')
+
+
 def _aspas(valor):
-    if '"' in valor or "\\" in valor or "\n" in valor:
+    if any(caractere in valor for caractere in _CARACTERES_PROIBIDOS):
         raise CredenciaisNaoTransmitidas(
             "valor não pode ser transmitido com segurança")
     return '"%s"' % valor
